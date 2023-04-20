@@ -4,5 +4,7 @@ if exist output echo WARNING: Output already exists. To ensure a clean build del
 call build_game.bat script
 call build_cgame.bat script
 call build_ui.bat script
-
+call pk3.bat script
 pause
+
+call play.bat script

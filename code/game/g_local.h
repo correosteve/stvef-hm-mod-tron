@@ -9,7 +9,7 @@
 //==================================================================
 
 // the "gameversion" client command will print this plus compile date
-#define	GAMEVERSION	"baseEF"
+#define	GAMEVERSION	"tron" //lob
 
 #define INFINITE			1000000
 
