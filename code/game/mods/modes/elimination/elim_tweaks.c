@@ -42,6 +42,9 @@
 // Disable suicides during warmup or intermission.
 #define FEATURE_RESTRICT_SUICIDE
 
+// Disable follow spectators cycling to players who have just been eliminated.
+#define FEATURE_NO_ELIMINATED_CYCLE
+
 typedef struct {
 	int _unused;
 #ifdef FEATURE_SCOREBOARD_TIME_INDICATOR
@@ -80,13 +83,15 @@ ModElimTweaks_EliminatedMessage
 */
 static void ModElimTweaks_EliminatedMessage( int clientNum, team_t oldTeam, qboolean eliminated ) {
 	gclient_t *client = &level.clients[clientNum];
+	const char *leavemsg = modcfg.mods_enabled.uam ? "left the battle" : "left the game";
+	const char *playerterm = modcfg.mods_enabled.uam ? "gladiator" : "player";
 
 	if ( g_gametype.integer >= GT_TEAM ) {
 		int playersAlive = ModElimination_Shared_CountPlayersAliveTeam( oldTeam, clientNum );
 		if ( playersAlive >= 1 ) {
-			trap_SendServerCommand( -1, va( "cp \"%s ^7%s\n^%s%i player%s of team %s left\"",
-					client->pers.netname, eliminated ? "died" : "left the game",
-					oldTeam == TEAM_RED ? "1" : "4", playersAlive,
+			trap_SendServerCommand( -1, va( "cp \"%s ^7%s\n^%s%i %s%s of team %s left\"",
+					client->pers.netname, eliminated ? "died" : leavemsg,
+					oldTeam == TEAM_RED ? "1" : "4", playersAlive, playerterm,
 					playersAlive == 1 ? "" : "s", oldTeam == TEAM_RED ? "red" : "blue" ) );
 			ModElimTweaks_RemainingPlayerSound( playersAlive );
 		}
@@ -94,8 +99,8 @@ static void ModElimTweaks_EliminatedMessage( int clientNum, team_t oldTeam, qboo
 	} else {
 		int playersAlive = ModElimination_Shared_CountPlayersAliveTeam( TEAM_FREE, clientNum );
 		if ( playersAlive >= 2 ) {
-			trap_SendServerCommand( -1, va( "cp \"%s ^7%s\n^4%i players in the arena left\"",
-					client->pers.netname, eliminated ? "died" : "left the game", playersAlive ) );
+			trap_SendServerCommand( -1, va( "cp \"%s ^7%s\n^4%i %ss in the arena left\"",
+					client->pers.netname, eliminated ? "died" : leavemsg, playersAlive, playerterm ) );
 			ModElimTweaks_RemainingPlayerSound( playersAlive );
 		}
 	}
@@ -167,14 +172,28 @@ static int MOD_PREFIX(AdjustScoreboardAttributes)( MODFN_CTV, int clientNum, sco
 }
 
 /*
+================
+(ModFN) EnableCycleFollow
+================
+*/
+static qboolean MOD_PREFIX(EnableCycleFollow)( MODFN_CTV, int clientNum ) {
+#ifdef FEATURE_NO_ELIMINATED_CYCLE
+	if ( ModElimination_Static_IsPlayerEliminated( clientNum ) ) {
+		return qfalse;
+	}
+#endif
+
+	return MODFN_NEXT( EnableCycleFollow, ( MODFN_NC, clientNum ) );
+}
+
+/*
 =================
 (ModFN) CheckSuicideAllowed
 
 Disable suicide during warmup.
 =================
 */
-LOGFUNCTION_SRET( qboolean, MOD_PREFIX(CheckSuicideAllowed), ( MODFN_CTV, int clientNum ),
-		( MODFN_CTN, clientNum ), "G_MODFN_CHECKSUICIDEALLOWED" ) {
+static qboolean MOD_PREFIX(CheckSuicideAllowed)( MODFN_CTV, int clientNum ) {
 #ifdef FEATURE_RESTRICT_SUICIDE
 	if ( level.matchState == MS_WARMUP || level.matchState >= MS_INTERMISSION_QUEUED ) {
 		return qfalse;
@@ -189,8 +208,8 @@ LOGFUNCTION_SRET( qboolean, MOD_PREFIX(CheckSuicideAllowed), ( MODFN_CTV, int cl
 (ModFN) PostPlayerDie
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PostPlayerDie), ( MODFN_CTV, gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int meansOfDeath, int *awardPoints ),
-		( MODFN_CTN, self, inflictor, attacker, meansOfDeath, awardPoints ), "G_MODFN_POSTPLAYERDIE" ) {
+static void MOD_PREFIX(PostPlayerDie)( MODFN_CTV, gentity_t *self, gentity_t *inflictor, gentity_t *attacker,
+		int meansOfDeath, int *awardPoints ) {
 	int clientNum = self - g_entities;
 	gclient_t *client = &level.clients[clientNum];
 	elim_extras_client_t *modclient = &MOD_STATE->clients[clientNum];
@@ -213,19 +232,23 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PostPlayerDie), ( MODFN_CTV, gentity_t *self, gent
 /*
 ================
 (ModFN) PrePlayerLeaveTeam
-
-Reset stats and eliminated state when player switches teams or becomes spectator.
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PrePlayerLeaveTeam), ( MODFN_CTV, int clientNum, team_t oldTeam ),
-		( MODFN_CTN, clientNum, oldTeam ), "G_MODFN_PREPLAYERLEAVETEAM" ) {
-	MODFN_NEXT( PrePlayerLeaveTeam, ( MODFN_NC, clientNum, oldTeam ) );
+static void MOD_PREFIX(PrePlayerLeaveTeam)( MODFN_CTV, int clientNum, team_t oldTeam ) {
+	gclient_t *client = &level.clients[clientNum];
 
 #ifdef FEATURE_ELIMINATED_MESSAGES
-	if ( level.matchState == MS_ACTIVE && oldTeam != TEAM_SPECTATOR && !ModElimination_Static_IsPlayerEliminated( clientNum ) ) {
+	if ( level.matchState == MS_ACTIVE && client->pers.connected == CON_CONNECTED &&
+			oldTeam != TEAM_SPECTATOR && !ModElimination_Static_IsPlayerEliminated( clientNum ) &&
+			// don't display if being dropped via join limit connecting check
+			client->pers.enterTime != level.time ) {
 		ModElimTweaks_EliminatedMessage( clientNum, oldTeam, qfalse );
 	}
 #endif
+
+	// Call this last, since it may reset eliminated status in elim_main.c
+	// and break ModElimination_Static_IsPlayerEliminated.
+	MODFN_NEXT( PrePlayerLeaveTeam, ( MODFN_NC, clientNum, oldTeam ) );
 }
 
 /*
@@ -233,7 +256,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PrePlayerLeaveTeam), ( MODFN_CTV, int clientNum, t
 (ModFN) PostRunFrame
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PostRunFrame), ( MODFN_CTV ), ( MODFN_CTN ), "G_MODFN_POSTRUNFRAME" ) {
+static void MOD_PREFIX(PostRunFrame)( MODFN_CTV ) {
 	MODFN_NEXT( PostRunFrame, ( MODFN_NC ) );
 
 #ifdef FEATURE_TIMELIMIT_RESTART
@@ -252,8 +275,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PostRunFrame), ( MODFN_CTV ), ( MODFN_CTN ), "G_MO
 (ModFN) MatchStateTransition
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(MatchStateTransition), ( MODFN_CTV, matchState_t oldState, matchState_t newState ),
-		( MODFN_CTN, oldState, newState ), "G_MODFN_MATCHSTATETRANSITION" ) {
+static void MOD_PREFIX(MatchStateTransition)( MODFN_CTV, matchState_t oldState, matchState_t newState ) {
 	MODFN_NEXT( MatchStateTransition, ( MODFN_NC, oldState, newState ) );
 
 #ifdef FEATURE_SURVIVOR_MESSAGES
@@ -262,8 +284,8 @@ LOGFUNCTION_SVOID( MOD_PREFIX(MatchStateTransition), ( MODFN_CTV, matchState_t o
 			trap_SendServerCommand( -1, va( "cp \"%s\n^2is the survivor!\n\"",
 					level.winningTeam == TEAM_RED ? "^1TEAM RED" : "^4TEAM BLUE" ) );
 		} else {
-			if ( G_AssertConnectedClient( level.sortedClients[0] ) &&
-					EF_WARN_ASSERT( !ModElimination_Static_IsPlayerEliminated( level.sortedClients[0] ) ) ) {
+			int survivor = level.sortedClients[0];
+			if ( G_AssertConnectedClient( survivor ) && !ModElimination_Static_IsPlayerEliminated( survivor ) ) {
 				trap_SendServerCommand( -1, va( "cp \"%s\n^2is the survivor!\n\"",
 						level.clients[level.sortedClients[0]].pers.netname ) );
 			}
@@ -277,12 +299,13 @@ LOGFUNCTION_SVOID( MOD_PREFIX(MatchStateTransition), ( MODFN_CTV, matchState_t o
 ModElimTweaks_Init
 ================
 */
-LOGFUNCTION_VOID( ModElimTweaks_Init, ( void ), (), "G_MOD_INIT G_ELIMINATION" ) {
+void ModElimTweaks_Init( void ) {
 	if ( !MOD_STATE ) {
 		MOD_STATE = G_Alloc( sizeof( *MOD_STATE ) );
 
 		MODFN_REGISTER( AdjustGeneralConstant, ++modePriorityLevel );
 		MODFN_REGISTER( AdjustScoreboardAttributes, ++modePriorityLevel );
+		MODFN_REGISTER( EnableCycleFollow, ++modePriorityLevel );
 		MODFN_REGISTER( CheckSuicideAllowed, ++modePriorityLevel );
 		MODFN_REGISTER( PostPlayerDie, ++modePriorityLevel );
 		MODFN_REGISTER( PrePlayerLeaveTeam, ++modePriorityLevel );

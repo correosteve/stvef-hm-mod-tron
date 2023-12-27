@@ -17,6 +17,18 @@ static struct {
 	qboolean supported;		// whether server support for weapon prediction is available
 	qboolean projectiles;	// whether projectile compensation is enabled
 	qboolean tripMines;		// grenade tripmines enabled
+	qboolean imodRifle;		// gladiator-style instagib rifle enabled
+	qboolean seekerAccel;	// pinball-style weapon acceleration with seeker powerup
+	int projectileSpeed4p;
+	int projectileSpeed4a;
+	int projectileSpeed5p;
+	int projectileSpeed6p;
+	int projectileSpeed6a;
+	int projectileSpeed7a;
+	int projectileSpeed8p;
+	int projectileSpeed8a;
+	int projectileSpeed9a;
+	int projectileSpeedbp;
 } wepPredictCfg;
 
 /*
@@ -48,6 +60,17 @@ void CG_WeaponPredict_ResetConfig( void ) {
 
 /*
 ==================
+CG_WeaponPredict_LoadInteger
+==================
+*/
+static void CG_WeaponPredict_LoadInteger( const char *key, const char *value, const char *targetKey, int *target ) {
+	if ( !Q_stricmp( key, targetKey ) ) {
+		*target = atoi( value );
+	}
+}
+
+/*
+==================
 CG_WeaponPredict_LoadBoolean
 ==================
 */
@@ -63,11 +86,25 @@ CG_WeaponPredict_LoadValue
 ==================
 */
 static void CG_WeaponPredict_LoadValue( const char *key, const char *value ) {
-	if ( !Q_stricmp( key, "ver" ) && !Q_stricmp( value, BG_WEAPON_PREDICT_VERSION ) ) {
+	if ( !Q_stricmp( key, "ver" ) && (
+			// Support server using either old or new version string.
+			!Q_stricmp( value, "uxb09a9y" ) || !Q_stricmp( value, "uxb09a9y-2" ) ) ) {
 		wepPredictCfg.supported = qtrue;
 	}
 	CG_WeaponPredict_LoadBoolean( key, value, "proj", &wepPredictCfg.projectiles );
 	CG_WeaponPredict_LoadBoolean( key, value, "tm", &wepPredictCfg.tripMines );
+	CG_WeaponPredict_LoadBoolean( key, value, "imodRifle", &wepPredictCfg.imodRifle );
+	CG_WeaponPredict_LoadBoolean( key, value, "seekerAccel", &wepPredictCfg.seekerAccel );
+	CG_WeaponPredict_LoadInteger( key, value, "ps4p", &wepPredictCfg.projectileSpeed4p );
+	CG_WeaponPredict_LoadInteger( key, value, "ps4a", &wepPredictCfg.projectileSpeed4a );
+	CG_WeaponPredict_LoadInteger( key, value, "ps5p", &wepPredictCfg.projectileSpeed5p );
+	CG_WeaponPredict_LoadInteger( key, value, "ps6p", &wepPredictCfg.projectileSpeed8p );
+	CG_WeaponPredict_LoadInteger( key, value, "ps6a", &wepPredictCfg.projectileSpeed8a );
+	CG_WeaponPredict_LoadInteger( key, value, "ps7a", &wepPredictCfg.projectileSpeed7a );
+	CG_WeaponPredict_LoadInteger( key, value, "ps8p", &wepPredictCfg.projectileSpeed8p );
+	CG_WeaponPredict_LoadInteger( key, value, "ps8a", &wepPredictCfg.projectileSpeed8a );
+	CG_WeaponPredict_LoadInteger( key, value, "ps9a", &wepPredictCfg.projectileSpeed9a );
+	CG_WeaponPredict_LoadInteger( key, value, "psbp", &wepPredictCfg.projectileSpeedbp );
 }
 
 /*
@@ -135,30 +172,32 @@ static const vec3_t CG_WP_MuzzlePoint[WP_NUM_WEAPONS] =
 #define MAXRANGE_IMOD			4096
 #define	MAX_RAIL_HITS	4
 #define SCAV_ALT_SIZE		6
-#define SCAV_ALT_VELOCITY	1000
+#define SCAV_ALT_VELOCITY	( wepPredictCfg.projectileSpeed4a > 0 ? wepPredictCfg.projectileSpeed4a : 1000 )
 #define SCAV_ALT_UP_VELOCITY	100
 #define SCAV_ALT_SIZE		6
 #define SCAV_SPREAD			0.5
-#define SCAV_VELOCITY		1500
+#define SCAV_VELOCITY		( wepPredictCfg.projectileSpeed4p > 0 ? wepPredictCfg.projectileSpeed4p : 1500 )
 #define SCAV_SIZE			3
-#define STASIS_VELOCITY		1100
+#define STASIS_VELOCITY		( wepPredictCfg.projectileSpeed5p > 0 ? wepPredictCfg.projectileSpeed5p : 1100 )
 #define STASIS_SPREAD		0.085f
 #define STASIS_MAIN_MISSILE_BIG		4
 #define STASIS_MAIN_MISSILE_SMALL	2
 #define MAXRANGE_ALT_STASIS		4096
-#define GRENADE_VELOCITY		1000
-#define GRENADE_VELOCITY_ALT		1000
+#define GRENADE_VELOCITY		( wepPredictCfg.projectileSpeed6p > 0 ? wepPredictCfg.projectileSpeed6p : 1000 )
+#define GRENADE_VELOCITY_ALT		( wepPredictCfg.projectileSpeed6a > 0 ? wepPredictCfg.projectileSpeed6a : 1000 )
 #define GRENADE_SIZE			4
-#define TETRION_ALT_VELOCITY	1500
+#define TETRION_ALT_VELOCITY	( wepPredictCfg.projectileSpeed7a > 0 ? wepPredictCfg.projectileSpeed7a : 1500 )
 #define TETRION_ALT_SIZE		6
-#define QUANTUM_VELOCITY	1100
+#define QUANTUM_VELOCITY	( wepPredictCfg.projectileSpeed8p > 0 ? wepPredictCfg.projectileSpeed8p : 1100 )
 #define QUANTUM_SIZE		3
-#define QUANTUM_ALT_VELOCITY	550
-#define DN_SEARCH_DIST	256
+#define QUANTUM_ALT_VELOCITY	( wepPredictCfg.projectileSpeed8a > 0 ? wepPredictCfg.projectileSpeed8a : 550 )
+#define DN_SEARCH_DIST	( wepPredictCfg.projectileSpeed9a > 0 ? wepPredictCfg.projectileSpeed9a : 256 )
 #define DN_ALT_SIZE		12
 #define BORG_PROJECTILE_SIZE	8
-#define BORG_PROJ_VELOCITY		1000
+#define BORG_PROJ_VELOCITY		( wepPredictCfg.projectileSpeedbp > 0 ? wepPredictCfg.projectileSpeedbp : 1000 )
 #define MAX_FORWARD_TRACE	8192
+
+#define SEEKER_ACCEL_ACTIVE ( wepPredictCfg.seekerAccel && cg.predictedPlayerState.powerups[PW_SEEKER] )
 
 static float CG_WeaponPredict_ShotSize( weapon_t weapon ) {
 	switch ( weapon ) {
@@ -372,6 +411,36 @@ static qboolean CG_WeaponPredict_CanStickGrenade( int entityNum ) {
 
 /*
 ================
+CG_WeaponPredict_EntitySearchRange
+
+Increase allowed match range for predicted entities and events when moving fast or standing on a
+fast mover. This range is just used as a sanity check so it's fine if the values are very rough.
+================
+*/
+static float CG_WeaponPredict_EntitySearchRange( void ) {
+	int groundEntityNum = cg.predictedPlayerState.groundEntityNum;
+	float range = 250.0f;
+
+	float speed = VectorLength( cg.predictedPlayerState.velocity ) / 8.0f;
+	if ( speed > range ) {
+		range = speed;
+	}
+
+	if ( groundEntityNum > 0 && groundEntityNum <= ENTITYNUM_MAX_NORMAL ) {
+		centity_t *cent = &cg_entities[groundEntityNum];
+		if ( cent->currentState.eType == ET_MOVER ) {
+			float speed = VectorLength( cent->currentState.pos.trDelta );
+			if ( speed > range ) {
+				range = speed;
+			}
+		}
+	}
+
+	return range;
+}
+
+/*
+================
 CG_WeaponPredict_FindMatchingEntity
 
 Searches current snapshot for the best matching entity according to eval function.
@@ -546,6 +615,8 @@ const char *CG_WeaponPredict_EventToString( int event ) {
 		return "EV_IMOD_HIT";
 	case EV_IMOD_ALTFIRE:
 		return "EV_IMOD_ALTFIRE";
+	case EV_IMOD_ALTFIRE_HIT:
+		return "EV_IMOD_ALTFIRE_HIT";
 	case EV_STASIS:
 		return "EV_STASIS";
 	case EV_GRENADE_SHRAPNEL_EXPLODE:
@@ -586,7 +657,7 @@ static float CG_WeaponPredict_ComparePredictedEvent( const centity_t *cent, void
 		float origin_delta = ORIGIN2_BASED_EVENT( event ) ? Distance( es->origin2, predicted->origin2 ) :
 			Distance( es->pos.trBase, predicted->origin );
 
-		if ( origin_delta < 250.0f ) {
+		if ( origin_delta < CG_WeaponPredict_EntitySearchRange() ) {
 			return origin_delta;
 		}
 	}
@@ -1048,7 +1119,7 @@ static float CG_WeaponPredict_ComparePredictedMissile( const centity_t *cent, vo
 			dot = 0.5f;
 		}
 
-		if ( deltaOrigin < 250.0f ) {
+		if ( deltaOrigin < CG_WeaponPredict_EntitySearchRange() ) {
 			// take dot product into account even if deltaOrigin is 0
 			return deltaOrigin / dot + ( 10.0f - dot );
 		}
@@ -1153,7 +1224,7 @@ static void CG_WeaponPredict_SpawnStasisProjectile( const weaponPredictDirs_t *d
 CG_WeaponPredict_FirePredictedRifle
 ================
 */
-static void CG_WeaponPredict_FirePredictedRifle( const weaponPredictDirs_t *dirs, qboolean alt_fire ) {
+static void CG_WeaponPredict_FirePredictedRifle( const weaponPredictDirs_t *dirs, qboolean alt_fire, qboolean imod_fx ) {
 	trace_t tr;
 	vec3_t end;
 	centity_t tent;
@@ -1176,15 +1247,21 @@ static void CG_WeaponPredict_FirePredictedRifle( const weaponPredictDirs_t *dirs
 	}
 
 	memset( &tent, 0, sizeof( tent ) );
-	if ( alt_fire ) {
-		tent.currentState.event = EV_COMPRESSION_RIFLE_ALT;
-		tent.currentState.eFlags |= EF_ALT_FIRING;
+	if ( imod_fx ) {
+		tent.currentState.event = EV_IMOD;
+		VectorCopy( tr.endpos, tent.lerpOrigin );
+		VectorCopy( dirs->muzzle, tent.currentState.origin2 );
 	} else {
-		tent.currentState.event = EV_COMPRESSION_RIFLE;
+		if ( alt_fire ) {
+			tent.currentState.event = EV_COMPRESSION_RIFLE_ALT;
+			tent.currentState.eFlags |= EF_ALT_FIRING;
+		} else {
+			tent.currentState.event = EV_COMPRESSION_RIFLE;
+		}
+		VectorCopy( dirs->muzzle, tent.lerpOrigin );
+		VectorSubtract(end, dirs->muzzle, tent.currentState.origin2);
+		VectorShort(tent.currentState.origin2);
 	}
-	VectorCopy( dirs->muzzle, tent.lerpOrigin );
-	VectorSubtract(end, dirs->muzzle, tent.currentState.origin2);
-	VectorShort(tent.currentState.origin2);
 
 	CG_WeaponPredict_RunPredictedEvent( &tent, cg.predictedPlayerState.commandTime );
 }
@@ -1226,7 +1303,7 @@ static void CG_WeaponPredict_FirePredictedImod( const weaponPredictDirs_t *dirs,
 			CG_WeaponPredict_RunPredictedEvent( &tent, cg.predictedPlayerState.commandTime );
 		}
 
-		if ( tr.contents & CONTENTS_SOLID || tr.entityNum == ENTITYNUM_NONE ) {
+		if ( tr.contents & CONTENTS_SOLID || tr.entityNum == ENTITYNUM_NONE || tr.entityNum == ENTITYNUM_WORLD ) {
 			break;
 		}
 
@@ -1275,11 +1352,15 @@ static void CG_WeaponPredict_PrimaryAttack( int event ) {
 	dirs = CG_WeaponPredict_GetDirs( &cg.predictedPlayerState, qfalse );
 
 	if ( cg.predictedPlayerState.weapon == WP_COMPRESSION_RIFLE ) {
-		CG_WeaponPredict_FirePredictedRifle( &dirs, qfalse );
+		CG_WeaponPredict_FirePredictedRifle( &dirs, qfalse, qfalse );
 	}
 
 	if ( cg.predictedPlayerState.weapon == WP_IMOD ) {
-		CG_WeaponPredict_FirePredictedImod( &dirs, qfalse );
+		if ( wepPredictCfg.imodRifle ) {
+			CG_WeaponPredict_FirePredictedRifle( &dirs, qtrue, qtrue );
+		} else {
+			CG_WeaponPredict_FirePredictedImod( &dirs, qfalse );
+		}
 	}
 
 	if ( cg.predictedPlayerState.weapon == WP_SCAVENGER_RIFLE && wepPredictCfg.projectiles ) {
@@ -1322,6 +1403,12 @@ static void CG_WeaponPredict_PrimaryAttack( int event ) {
 		SnapVector( proj->cent.currentState.pos.trDelta );
 		proj->cent.currentState.eFlags |= EF_BOUNCE_HALF;
 
+		if ( SEEKER_ACCEL_ACTIVE ) {
+			proj->cent.currentState.eType = ET_ALT_MISSILE;
+			proj->cent.currentState.weapon = WP_QUANTUM_BURST;
+			VectorScale( proj->cent.currentState.pos.trDelta, 2.0f, proj->cent.currentState.pos.trDelta );
+		}
+
 		CG_WeaponPredict_LogPredictedProjectile( proj );
 	}
 
@@ -1342,6 +1429,11 @@ static void CG_WeaponPredict_PrimaryAttack( int event ) {
 		predictedProjectile_t *proj = CG_WeaponPredict_SpawnPredictedProjectile(
 				ET_MISSILE, WP_QUANTUM_BURST, TR_LINEAR, QUANTUM_VELOCITY, QUANTUM_SIZE, &dirs );
 		SnapVector( proj->cent.currentState.pos.trDelta );
+
+		if ( SEEKER_ACCEL_ACTIVE ) {
+			proj->cent.currentState.eType = ET_ALT_MISSILE;
+			VectorScale( proj->cent.currentState.pos.trDelta, 2.5f, proj->cent.currentState.pos.trDelta );
+		}
 
 		CG_WeaponPredict_LogPredictedProjectile( proj );
 	}
@@ -1372,7 +1464,7 @@ static void CG_WeaponPredict_AltAttack( int event ) {
 	dirs = CG_WeaponPredict_GetDirs( &cg.predictedPlayerState, qtrue );
 
 	if ( cg.predictedPlayerState.weapon == WP_COMPRESSION_RIFLE ) {
-		CG_WeaponPredict_FirePredictedRifle( &dirs, qtrue );
+		CG_WeaponPredict_FirePredictedRifle( &dirs, qtrue, qfalse );
 	}
 
 	if ( cg.predictedPlayerState.weapon == WP_IMOD ) {
@@ -1415,6 +1507,10 @@ static void CG_WeaponPredict_AltAttack( int event ) {
 				ET_ALT_MISSILE, WP_GRENADE_LAUNCHER, moveType, GRENADE_VELOCITY_ALT, GRENADE_SIZE, &dirs );
 		SnapVector( proj->cent.currentState.pos.trDelta );
 		proj->cent.currentState.eFlags |= EF_MISSILE_STICK;
+
+		if ( SEEKER_ACCEL_ACTIVE ) {
+			VectorScale( proj->cent.currentState.pos.trDelta, 2.0f, proj->cent.currentState.pos.trDelta );
+		}
 
 		CG_WeaponPredict_LogPredictedProjectile( proj );
 	}

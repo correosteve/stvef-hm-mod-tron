@@ -31,6 +31,7 @@ static struct {
 typedef struct {
 	int clientNum;
 	int oldEventSequence;
+	qboolean spectator;
 } postMoveContext_t;
 
 /*
@@ -38,8 +39,7 @@ typedef struct {
 ModPlayerMove_PostPmoveCallback
 ==============
 */
-LOGFUNCTION_SVOID( ModPlayerMove_PostPmoveCallback, ( pmove_t *pmove, qboolean finalFragment, void *context ),
-		( pmove, finalFragment, context ), "" ) {
+static void ModPlayerMove_PostPmoveCallback( pmove_t *pmove, qboolean finalFragment, void *context ) {
 	postMoveContext_t *pmc = (postMoveContext_t *)context;
 
 	if ( finalFragment || MOD_STATE->g_pMoveTriggerMode.integer ) {
@@ -47,8 +47,10 @@ LOGFUNCTION_SVOID( ModPlayerMove_PostPmoveCallback, ( pmove_t *pmove, qboolean f
 		pmc->oldEventSequence = level.clients[pmc->clientNum].ps.eventSequence;
 	}
 
-	// Store smoothing position here regardless of trigger mode.
-	ModPCSmoothing_Static_RecordClientMove( pmc->clientNum );
+	if ( !pmc->spectator ) {
+		// Store smoothing position here regardless of trigger mode.
+		ModPCSmoothing_Static_RecordClientMove( pmc->clientNum );
+	}
 }
 
 /*
@@ -79,7 +81,7 @@ static int MOD_PREFIX(PmoveFixedLength)( MODFN_CTV, qboolean isBot ) {
 Performs player movement corresponding to a single input usercmd from the client.
 ==============
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(RunPlayerMove), ( MODFN_CTV, int clientNum ), ( MODFN_CTN, clientNum ), "G_MODFN_RUNPLAYERMOVE" ) {
+static void MOD_PREFIX(RunPlayerMove)( MODFN_CTV, int clientNum, qboolean spectator ) {
 	gclient_t *client = &level.clients[clientNum];
 	playerState_t *ps = &client->ps;
 	pmove_t pmove;
@@ -89,8 +91,10 @@ LOGFUNCTION_SVOID( MOD_PREFIX(RunPlayerMove), ( MODFN_CTV, int clientNum ), ( MO
 
 	pmc.clientNum = clientNum;
 	pmc.oldEventSequence = ps->eventSequence;
+	pmc.spectator = spectator;
 
-	if ( ps->pm_type == PM_SPECTATOR && client->ps.velocity[0] == 0.0f && client->ps.velocity[1] == 0.0f &&
+	if ( ps->pm_type == PM_SPECTATOR && client->ps.viewheight == DEFAULT_VIEWHEIGHT &&
+			client->ps.velocity[0] == 0.0f && client->ps.velocity[1] == 0.0f &&
 			client->ps.velocity[2] == 0.0f && client->pers.cmd.forwardmove == 0 &&
 			client->pers.cmd.rightmove == 0 && client->pers.cmd.upmove == 0 ) {
 		// Skip full move for stationary spectators to save server cpu usage.
@@ -104,8 +108,9 @@ LOGFUNCTION_SVOID( MOD_PREFIX(RunPlayerMove), ( MODFN_CTV, int clientNum ), ( MO
 
 	modfn.PmoveInit( clientNum, &pmove );
 
-	if ( isBot && fixedLength > 0 && client->ps.velocity[2] == 0.0f && pmove.cmd.upmove <= 0 ) {
-		// For bots with no vertical movement, skip frame partitioning to save server cpu usage.
+	if ( isBot && fixedLength > 0 && client->ps.velocity[2] == 0.0f && pmove.cmd.upmove <= 0 &&
+			!( client->ps.pm_type == PM_DEAD && ( client->ps.velocity[0] != 0.0f || client->ps.velocity[1] != 0.0f ) ) ) {
+		// For non-dead bots with no vertical movement, skip frame partitioning to save server cpu usage.
 		// Since bots don't do things like circle jumping it shouldn't make a noticeable difference.
 		pmove.cmd.serverTime -= pmove.cmd.serverTime % fixedLength;
 		Pmove( &pmove, 0, ModPlayerMove_PostPmoveCallback, &pmc );
@@ -119,8 +124,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(RunPlayerMove), ( MODFN_CTV, int clientNum ), ( MO
 (ModFN) PmoveInit
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PmoveInit), ( MODFN_CTV, int clientNum, pmove_t *pmove ),
-		( MODFN_CTN, clientNum, pmove ), "G_MODFN_PMOVEINIT" ) {
+static void MOD_PREFIX(PmoveInit)( MODFN_CTV, int clientNum, pmove_t *pmove ) {
 	MODFN_NEXT( PmoveInit, ( MODFN_NC, clientNum, pmove ) );
 
 	if ( MOD_STATE->g_noJumpKeySlowdown.integer ) {
@@ -139,7 +143,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PmoveInit), ( MODFN_CTV, int clientNum, pmove_t *p
 (ModFN) AddModConfigInfo
 ==============
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(AddModConfigInfo), ( MODFN_CTV, char *info ), ( MODFN_CTN, info ), "G_MODFN_ADDMODCONFIGINFO" ) {
+static void MOD_PREFIX(AddModConfigInfo)( MODFN_CTV, char *info ) {
 	int pMoveFixed = modfn.PmoveFixedLength( qfalse );
 
 	if ( pMoveFixed ) {
@@ -178,7 +182,7 @@ static void ModPlayerMove_ModcfgCvarChanged( trackedCvar_t *cvar ) {
 ModPlayerMove_Init
 ================
 */
-LOGFUNCTION_VOID( ModPlayerMove_Init, ( void ), (), "G_MOD_INIT" ) {
+void ModPlayerMove_Init( void ) {
 	if ( !MOD_STATE ) {
 		MOD_STATE = G_Alloc( sizeof( *MOD_STATE ) );
 

@@ -342,7 +342,7 @@ If source player died with PW_DISINTEGRATE or PW_EXPLODE the body will be set to
 invisible but may still be able to be gibbed...
 =============
 */
-LOGFUNCTION_RET( gentity_t *, ModFNDefault_CopyToBodyQue, ( int clientNum ), ( clientNum ), "G_MODFN_COPYTOBODYQUE" ) {
+gentity_t *ModFNDefault_CopyToBodyQue( int clientNum ) {
 	gentity_t *ent = &g_entities[clientNum];
 	gentity_t		*body;
 	int			contents;
@@ -696,7 +696,11 @@ void SetSkinForModel( const char *model, const char *skin, char *output, unsigne
 		*p = '\0';
 
 	if ( skin ) {
-		Com_sprintf( output, size, "%s/%s", temp, skin );
+		if ( strlen( temp ) + strlen( skin ) + 1 >= size ) {
+			Com_sprintf( output, size, "munro/%s", skin );
+		} else {
+			Com_sprintf( output, size, "%s/%s", temp, skin );
+		}
 	} else {
 		Q_strncpyz( output, temp, size );
 	}
@@ -709,9 +713,7 @@ void SetSkinForModel( const char *model, const char *skin, char *output, unsigne
 Retrieves player model string for client, performing any mod conversions as needed.
 ============
 */
-LOGFUNCTION_VOID( ModFNDefault_GetPlayerModel,
-		( int clientNum, const char *userinfo, char *output, unsigned int outputSize ),
-		( clientNum, userinfo, output, outputSize ), "G_MODFN_GETPLAYERMODEL" ) {
+void ModFNDefault_GetPlayerModel( int clientNum, const char *userinfo, char *output, unsigned int outputSize ) {
 	Q_strncpyz( output, Info_ValueForKey( userinfo, "model" ), outputSize );
 }
 
@@ -722,8 +724,7 @@ LOGFUNCTION_VOID( ModFNDefault_GetPlayerModel,
 Returns effective handicap values to use for client.
 ============
 */
-LOGFUNCTION_RET( int, ModFNDefault_EffectiveHandicap, ( int clientNum, effectiveHandicapType_t type ),
-		( clientNum, type ), "G_MODFN_EFFECTIVEHANDICAP" ) {
+int ModFNDefault_EffectiveHandicap( int clientNum, effectiveHandicapType_t type ) {
 	gclient_t *client = &level.clients[clientNum];
 
 	if ( client->pers.handicap < 1 || client->pers.handicap > 100 ) {
@@ -811,6 +812,9 @@ void ClientUserinfoChanged( int clientNum ) {
 		SetSkinForModel( model, "red", model, sizeof( model ) );
 	} else if ( client->sess.sessionTeam == TEAM_BLUE ) {
 		SetSkinForModel( model, "blue", model, sizeof( model ) );
+	} else if ( g_gametype.integer >= GT_TEAM ) {
+		// client requires team skin for spectators
+		SetSkinForModel( model, "red", model, sizeof( model ) );
 	}
 
 	// colors
@@ -895,8 +899,6 @@ char *ClientConnect( int clientNum, qboolean firstTime, qboolean isBot ) {
 		}
 	}
 
-	modfn.PreClientConnect( clientNum, firstTime, isBot );
-
 	// they can connect
 	ent->client = level.clients + clientNum;
 	client = ent->client;
@@ -941,6 +943,8 @@ char *ClientConnect( int clientNum, qboolean firstTime, qboolean isBot ) {
 	if ( level.intermissiontime ) {
 		SendScoreboardMessageToAllClients();
 	}
+
+	modfn.PostClientConnect( clientNum, firstTime, isBot );
 
 	return NULL;
 }
@@ -1016,22 +1020,6 @@ void ClientBegin( int clientNum ) {
 		SendScoreboardMessageToAllClients();
 	}
 
-	// Use intro holodeck door if desired and we did not come from a restart
-	if ( g_holoIntro.integer && !(ent->r.svFlags & SVF_BOT) && (spawnType == CST_FIRSTTIME || spawnType == CST_MAPCHANGE) )
-	{
-		// kef -- also, don't do this if we're in intermission
-		if (!level.intermissiontime)
-		{
-			client->ps.introTime = level.time + TIME_INTRO;
-			client->ps.pm_type = PM_FREEZE;
-
-			if (g_ghostRespawn.integer)
-			{
-				ent->client->ps.powerups[PW_GHOST] = level.time + (g_ghostRespawn.integer * 1000) + TIME_INTRO;
-			}
-		}
-	}
-
 	// kef -- should reset all of our awards-related stuff
 	G_ClearClientLog(clientNum);
 }
@@ -1072,8 +1060,7 @@ void G_ResetClient( int clientNum ) {
 Checks if current player class is valid, and picks a new one if necessary.
 ============
 */
-LOGFUNCTION_VOID( ModFNDefault_UpdateSessionClass, ( int clientNum ),
-		( clientNum ), "G_MODFN_UPDATESESSIONCLASS" ) {
+void ModFNDefault_UpdateSessionClass( int clientNum ) {
 	// With no mods enabled, always use no class.
 	gclient_t *client = &level.clients[clientNum];
 	client->sess.sessionClass = PC_NOCLASS;
@@ -1087,8 +1074,7 @@ Configures class and other client parameters during ClientSpawn.
 Not called for spectators.
 ============
 */
-LOGFUNCTION_VOID( ModFNDefault_SpawnConfigureClient, ( int clientNum ),
-		( clientNum ), "G_MODFN_SPAWNCONFIGURECLIENT" ) {
+void ModFNDefault_SpawnConfigureClient( int clientNum ) {
 	gentity_t *ent = &g_entities[clientNum];
 	gclient_t *client = &level.clients[clientNum];
 
@@ -1109,8 +1095,7 @@ LOGFUNCTION_VOID( ModFNDefault_SpawnConfigureClient, ( int clientNum ),
 Prints info messages to clients during ClientSpawn.
 ============
 */
-LOGFUNCTION_VOID( ModFNDefault_SpawnCenterPrintMessage, ( int clientNum, clientSpawnType_t spawnType ),
-		( clientNum, spawnType ), "G_MODFN_SPAWNCENTERPRINTMESSAGE" ) {
+void ModFNDefault_SpawnCenterPrintMessage( int clientNum, clientSpawnType_t spawnType ) {
 	gclient_t *client = &level.clients[clientNum];
 
 	if ( spawnType != CST_RESPAWN || client->sess.sessionTeam == TEAM_SPECTATOR ) {
@@ -1138,8 +1123,7 @@ LOGFUNCTION_VOID( ModFNDefault_SpawnCenterPrintMessage, ( int clientNum, clientS
 Play transporter effect when player spawns.
 ============
 */
-LOGFUNCTION_VOID( ModFNDefault_SpawnTransporterEffect, ( int clientNum, clientSpawnType_t spawnType ),
-		( clientNum, spawnType ), "G_MODFN_SPAWNTRANSPORTEREFFECT" ) {
+void ModFNDefault_SpawnTransporterEffect( int clientNum, clientSpawnType_t spawnType ) {
 	gclient_t *client = &level.clients[clientNum];
 
 	if ( spawnType != CST_MAPRESTART ) {
@@ -1150,6 +1134,28 @@ LOGFUNCTION_VOID( ModFNDefault_SpawnTransporterEffect, ( int clientNum, clientSp
 
 /*
 ===========
+(ModFN) SetClientGhosting
+
+Activate or deactivate spawn invulnerability on client.
+============
+*/
+void ModFNDefault_SetClientGhosting( int clientNum, qboolean active ) {
+	gclient_t *client = &level.clients[clientNum];
+
+	if ( active ) {
+		int ghostLength = g_ghostRespawn.value * 1000;
+		if ( ghostLength > 0 ) {
+			// If holodeck door intro is playing, start countdown after it completes.
+			int startTime = client->ps.introTime > level.time ? client->ps.introTime : level.time;
+			client->ps.powerups[PW_GHOST] = startTime + ghostLength;
+		}
+	} else {
+		client->ps.powerups[PW_GHOST] = 0;
+	}
+}
+
+/*
+============
 ClientSpawn
 
 Called every time a client is placed fresh in the world:
@@ -1274,12 +1280,6 @@ void ClientSpawn( gentity_t *ent, clientSpawnType_t spawnType ) {
 	client->ps.pm_flags |= PMF_TIME_KNOCKBACK;
 	client->ps.pm_time = 100;
 
-	// If ghosting is engaged, allow the player to be invulnerable briefly.
-	if (g_ghostRespawn.integer)
-	{
-		ent->client->ps.powerups[PW_GHOST] = level.time + (g_ghostRespawn.integer * 1000);
-	}
-
 	client->inactivityTime = level.time + g_inactivity.integer * 1000;
 
 	// set default animations
@@ -1321,6 +1321,16 @@ void ClientSpawn( gentity_t *ent, clientSpawnType_t spawnType ) {
 
 	// print spawn messages
 	modfn.SpawnCenterPrintMessage( clientNum, spawnType );
+
+	// play holodeck intro on initial connect and map change, but not on map restarts
+	if ( g_holoIntro.integer && ( spawnType == CST_FIRSTTIME || spawnType == CST_MAPCHANGE ) &&
+			!( ent->r.svFlags & SVF_BOT ) && !level.intermissiontime ) {
+		client->ps.introTime = level.time + TIME_INTRO;
+		client->ps.pm_type = PM_FREEZE;
+	}
+
+	// if ghosting is engaged, allow the player to be invulnerable briefly
+	modfn.SetClientGhosting( clientNum, qtrue );
 
 	// play transporter effect, but not for spectators or holodeck intro viewers
 	if ( !( modfn.SpectatorClient( clientNum ) ) && !( client->ps.introTime > level.time ) ) {

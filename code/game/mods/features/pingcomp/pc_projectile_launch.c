@@ -136,13 +136,13 @@ int MOD_PREFIX(AdjustGeneralConstant)( MODFN_CTV, generalConstant_t gcType, int 
 (ModFN) PostFireProjectile
 ======================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PostFireProjectile), ( MODFN_CTV, gentity_t *projectile ), ( MODFN_CTN, projectile ), "G_MODFN_POSTFIREPROJECTILE" ) {
-	if ( projectile->inuse && ModPingcomp_Static_ProjectileCompensationEnabled() ) {
-		ModPCProjectileLaunch_AdvanceProjectile( projectile );
-	}
-
+static void MOD_PREFIX(PostFireProjectile)( MODFN_CTV, gentity_t *projectile ) {
 	if ( projectile->inuse ) {
 		MODFN_NEXT( PostFireProjectile, ( MODFN_NC, projectile ) );
+	}
+
+	if ( projectile->inuse && ModPingcomp_Static_ProjectileCompensationEnabled() ) {
+		ModPCProjectileLaunch_AdvanceProjectile( projectile );
 	}
 }
 
@@ -153,7 +153,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PostFireProjectile), ( MODFN_CTV, gentity_t *proje
 Log the frame time in order to replay frames accurately.
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PostRunFrame), ( MODFN_CTV ), ( MODFN_CTN ), "G_MODFN_POSTRUNFRAME" ) {
+static void MOD_PREFIX(PostRunFrame)( MODFN_CTV ) {
 	MOD_STATE->frameRecord[( MOD_STATE->frameCounter++ ) % MAX_FRAME_RECORD] = level.time;
 	MODFN_NEXT( PostRunFrame, ( MODFN_NC ) );
 }
@@ -163,7 +163,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PostRunFrame), ( MODFN_CTV ), ( MODFN_CTN ), "G_MO
 ModPCProjectileLaunch_Init
 ================
 */
-LOGFUNCTION_VOID( ModPCProjectileLaunch_Init, ( void ), (), "G_MOD_INIT" ) {
+void ModPCProjectileLaunch_Init( void ) {
 	if ( !MOD_STATE ) {
 		MOD_STATE = G_Alloc( sizeof( *MOD_STATE ) );
 
@@ -171,7 +171,7 @@ LOGFUNCTION_VOID( ModPCProjectileLaunch_Init, ( void ), (), "G_MOD_INIT" ) {
 
 		MODFN_REGISTER( AdjustWeaponConstant, MODPRIORITY_GENERAL );
 		MODFN_REGISTER( AdjustGeneralConstant, MODPRIORITY_GENERAL );
-		MODFN_REGISTER( PostFireProjectile, MODPRIORITY_GENERAL );
+		MODFN_REGISTER( PostFireProjectile, MODPRIORITY_HIGH );
 		MODFN_REGISTER( PostRunFrame, MODPRIORITY_GENERAL );
 	}
 }

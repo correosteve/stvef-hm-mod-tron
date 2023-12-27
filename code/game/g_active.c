@@ -495,6 +495,29 @@ qboolean ClientInactivityTimer( gclient_t *client )
 }
 
 /*
+================
+(ModFN) CheckFireSeeker
+
+Check for firing seeker powerup. Called once per second in ClientTimerActions.
+================
+*/
+void ModFNDefault_CheckFireSeeker( int clientNum ) {
+	gentity_t *ent = &g_entities[clientNum];
+	gclient_t *client = &level.clients[clientNum];
+
+	if ( client->ps.powerups[PW_SEEKER] )
+	{
+		vec3_t	seekerPos;
+
+		if (SeekerAcquiresTarget(ent, seekerPos)) // set the client's enemy to a valid target
+		{
+			FireSeeker( ent, ent->enemy, seekerPos );
+			G_AddEvent( ent, EV_POWERUP_SEEKER_FIRE, 0 ); // draw the thingy
+		}
+	}
+}
+
+/*
 ==================
 ClientTimerActions
 
@@ -549,16 +572,7 @@ void ClientTimerActions( gentity_t *ent, int msec ) {
 		}
 
 		// if we've got the seeker powerup, see if we can shoot it at someone
-		if ( client->ps.powerups[PW_SEEKER] )
-		{
-			vec3_t	seekerPos;
-
-			if (SeekerAcquiresTarget(ent, seekerPos)) // set the client's enemy to a valid target
-			{
-				FireSeeker( ent, ent->enemy, seekerPos );
-				G_AddEvent( ent, EV_POWERUP_SEEKER_FIRE, 0 ); // draw the thingy
-			}
-		}
+		modfn.CheckFireSeeker( ent - g_entities );
 	}
 }
 
@@ -619,13 +633,19 @@ extern qboolean FinishSpawningDetpack( gentity_t *ent, int itemIndex );
 //-----------------------------------------------------------------------------DECOY TEMP
 extern qboolean FinishSpawningDecoy( gentity_t *ent, int itemIndex );
 //-----------------------------------------------------------------------------DECOY TEMP
-void DetonateDetpack(gentity_t *ent);
 
 #define DETPACK_DAMAGE			750
 #define DETPACK_RADIUS			500
 
-void detpack_shot( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int damage, int meansOfDeath )
-{
+/*
+================
+(ModFN) DetpackShot
+
+Called when a detpack is being destroyed due to weapons fire or timeout.
+Normally causes a small explosion but not full detonation.
+================
+*/
+void ModFNDefault_DetpackShot( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int damage, int meansOfDeath ) {
 	int i = 0;
 	gentity_t *ent = NULL;
 
@@ -649,8 +669,16 @@ void detpack_shot( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, i
 	G_FreeEntity(self);
 }
 
-qboolean PlaceDetpack(gentity_t *ent)
-{
+/*
+================
+(ModFN) DetpackPlace
+
+Called when player triggers the detpack powerup.
+Returns entity if detpack successfully placed, NULL if location invalid.
+================
+*/
+gentity_t *ModFNDefault_DetpackPlace( int clientNum ) {
+	gentity_t	*ent = &g_entities[clientNum];
 	gentity_t	*detpack = NULL;
 	static gitem_t *detpackItem = NULL;
 	float		detDistance = 80;
@@ -683,19 +711,19 @@ qboolean PlaceDetpack(gentity_t *ent)
 		VectorMA(ent->client->ps.origin, detDistance + mins[0], fwd, detpack->s.origin);
 		if ( !FinishSpawningDetpack(detpack, detpackItem - bg_itemlist) )
 		{
-			return qfalse;
+			return NULL;
 		}
 		VectorNegate(fwd, fwd);
 		vectoangles(fwd, detpack->s.angles);
 		detpack->think = DetonateDetpack;
 		detpack->nextthink = level.time + 120000;	// if not used after 2 minutes it blows up anyway
 		detpack->parent = ent;
-		return qtrue;
+		return detpack;
 	}
 	else
 	{
 		// no room
-		return qfalse;
+		return NULL;
 	}
 }
 
@@ -835,6 +863,19 @@ void DetpackBlammoThink(gentity_t *ent)
 	ent->nextthink = level.time + FRAMETIME;
 }
 
+/*
+================
+(ModFN) DetpackExplodeEffects
+
+Play additional sounds and effects to accompany detpack explosion.
+================
+*/
+void ModFNDefault_DetpackExplodeEffects( gentity_t *detpack ) {
+	gentity_t *te = G_TempEntity( detpack->s.pos.trBase, EV_GLOBAL_SOUND );
+	te->s.eventParm = G_SoundIndex( "sound/weapons/explosions/detpakexplode.wav" );//cgs.media.detpackExplodeSound
+	te->r.svFlags |= SVF_BROADCAST;
+}
+
 void DetonateDetpack(gentity_t *ent)
 {
 	// find all detpacks. the one whose parent is ent...blow up
@@ -851,11 +892,7 @@ void DetonateDetpack(gentity_t *ent)
 		{
 			// found it. BLAMMO!
 			// play explosion sound to all clients
-			gentity_t	*te = NULL;
-
-			te = G_TempEntity( detpack->s.pos.trBase, EV_GLOBAL_SOUND );
-			te->s.eventParm = G_SoundIndex( "sound/weapons/explosions/detpakexplode.wav" );//cgs.media.detpackExplodeSound
-			te->r.svFlags |= SVF_BROADCAST;
+			modfn.DetpackExplodeEffects( detpack );
 
 			//so we can't be blown up by things we're blowing up
 			detpack->takedamage = 0;
@@ -867,6 +904,14 @@ void DetonateDetpack(gentity_t *ent)
 			//G_FreeEntity(detpack);
 			detpack->classname = NULL;
 			detpack->s.modelindex = 0;
+
+			if ( modfn.AdjustGeneralConstant( GC_DETPACK_NO_SHOCKWAVE, 0 ) ) {
+				// no shockwave - just free the entity, but allow time for EV_DETPACK event to be sent
+				detpack->think = G_FreeEntity;
+				detpack->nextthink = level.time + EVENT_VALID_MSEC;
+				return;
+			}
+
 			detpack->think = DetpackBlammoThink;
 			detpack->count = 1;
 			detpack->nextthink = level.time + FRAMETIME;
@@ -874,7 +919,7 @@ void DetonateDetpack(gentity_t *ent)
 		}
 		else if (detpack == ent)	// if detpack == ent, we're blowing up this detpack cuz it's been sitting too long
 		{
-			detpack_shot(detpack, NULL, NULL, 0, 0);
+			modfn.DetpackShot(detpack, NULL, NULL, 0, 0);
 			return;
 		}
 	}
@@ -886,16 +931,47 @@ void DetonateDetpack(gentity_t *ent)
 
 
 
-#define SHIELD_HEALTH				250
-#define SHIELD_HEALTH_DEC			10		// 25 seconds
+#define SHIELD_HEALTH				modfn.AdjustGeneralConstant( GC_FORCEFIELD_HEALTH_TOTAL, 250 )
+#define SHIELD_HEALTH_DEC			modfn.AdjustGeneralConstant( GC_FORCEFIELD_HEALTH_DECREMENT, 10 )		// 25 seconds
 #define MAX_SHIELD_HEIGHT			254
 #define MAX_SHIELD_HALFWIDTH		255
 #define SHIELD_HALFTHICKNESS		4
 #define SHIELD_PLACEDIST			64
+#define SHIELD_TAKEDAMAGE			( modfn.AdjustGeneralConstant( GC_FORCEFIELD_TAKE_DAMAGE, 1 ) ? qtrue : qfalse )
 
 static qhandle_t	shieldAttachSound=0;
 static qhandle_t	shieldActivateSound=0;
 static qhandle_t	shieldDamageSound=0;
+
+/*
+================
+(ModFN) ForcefieldSoundEvent
+
+Play sound effects on forcefield events such as creation and removal.
+================
+*/
+void ModFNDefault_ForcefieldSoundEvent( gentity_t *ent, forcefieldEvent_t event ) {
+	if ( event == FSE_ACTIVATE || event == FSE_TEMP_DEACTIVATE || event == FSE_TEMP_REACTIVATE || event == FSE_REMOVE ) {
+		G_AddEvent( ent, EV_GENERAL_SOUND, shieldActivateSound );
+	}
+
+	if ( event == FSE_CREATE ) {
+		G_AddEvent( ent, EV_GENERAL_SOUND, shieldAttachSound );
+	}
+}
+
+/*
+================
+(ModFN) ForcefieldAnnounce
+
+Play informational messages or sounds on forcefield events.
+================
+*/
+void ModFNDefault_ForcefieldAnnounce( gentity_t *forcefield, forcefieldEvent_t event ) {
+	if ( event == FSE_CREATE && G_AssertConnectedClient( forcefield->parent - g_entities ) ) {
+		trap_SendServerCommand( forcefield->parent - g_entities, "cp \"FORCE FIELD PLACED\"" );
+	}
+}
 
 /*
 ================
@@ -908,7 +984,8 @@ static void G_ShieldRemove(gentity_t *self)
 	self->nextthink = level.time + 100;
 
 	// Play raising sound...
-	G_AddEvent(self, EV_GENERAL_SOUND, shieldActivateSound);
+	modfn.ForcefieldSoundEvent( self, FSE_REMOVE );
+	modfn.ForcefieldAnnounce( self, FSE_REMOVE );
 }
 
 /*
@@ -918,7 +995,7 @@ G_ShieldThink
 Count down the health of the shield.
 ================
 */
-static void G_ShieldThink(gentity_t *self)
+void G_ShieldThink(gentity_t *self)
 {
 	self->s.eFlags &= ~(EF_ITEMPLACEHOLDER | EF_NODRAW);
 	self->health -= SHIELD_HEALTH_DEC;
@@ -994,11 +1071,11 @@ static void G_ShieldGoSolid(gentity_t *self)
 		self->s.eFlags &= ~(EF_NODRAW | EF_ITEMPLACEHOLDER);
 		self->nextthink = level.time + 1000;
 		self->think = G_ShieldThink;
-		self->takedamage = qtrue;
+		self->takedamage = SHIELD_TAKEDAMAGE;
 		trap_LinkEntity(self);
 
 		// Play raising sound...
-		G_AddEvent(self, EV_GENERAL_SOUND, shieldActivateSound);
+		modfn.ForcefieldSoundEvent( self, FSE_TEMP_REACTIVATE );
 	}
 }
 
@@ -1009,7 +1086,7 @@ G_ShieldGoNotSolid
 Turn the shield off to allow a friend to pass through.
 ================
 */
-static void G_ShieldGoNotSolid(gentity_t *self)
+void G_ShieldGoNotSolid(gentity_t *self)
 {
 	// make the shield non-solid very briefly
 	self->r.contents = CONTENTS_NONE;
@@ -1021,7 +1098,35 @@ static void G_ShieldGoNotSolid(gentity_t *self)
 	trap_LinkEntity(self);
 
 	// Play raising sound...
-	G_AddEvent(self, EV_GENERAL_SOUND, shieldActivateSound);
+	modfn.ForcefieldSoundEvent( self, FSE_TEMP_DEACTIVATE );
+}
+
+/*
+================
+G_GetForcefieldRelation
+
+Determine if a certain forcefield belongs to a certain player or their team.
+================
+*/
+forcefieldRelation_t G_GetForcefieldRelation( int clientNum, gentity_t *shield ) {
+	if ( G_AssertConnectedClient( clientNum ) ) {
+		gclient_t *client = &level.clients[clientNum];
+		if ( g_gametype.integer >= GT_TEAM ) {
+			if ( client->sess.sessionTeam != shield->s.otherEntityNum2 ) {
+				return FFR_ENEMY;
+			}
+			if ( shield->parent && shield->parent->client == client ) {
+				return FFR_SELF;
+			}
+			return FFR_TEAM;
+		}
+
+		if ( shield->parent && shield->parent->client == client ) {
+			return FFR_SELF;
+		}
+	}
+
+	return FFR_ENEMY;
 }
 
 /*
@@ -1031,24 +1136,14 @@ G_ShieldTouch
 Somebody (a player) has touched the shield. See if it is a "friend".
 ================
 */
-static void G_ShieldTouch(gentity_t *self, gentity_t *other, trace_t *trace)
+void G_ShieldTouch(gentity_t *self, gentity_t *other, trace_t *trace)
 {
-	if (g_gametype.integer >= GT_TEAM)
-	{ // let teammates through
-		// compare the parent's team to the "other's" team
-		if (( self->parent->client) && (other->client))
-		{
-			if ( self->parent->client->sess.sessionTeam == other->client->sess.sessionTeam || other->client->sess.sessionClass == PC_TECH )
-			{
-				G_ShieldGoNotSolid(self);
-			}
-		}
-	}
-	else
-	{//let the person who dropped the shield through
-		if (self->parent->s.number == other->s.number)
-		{
-			G_ShieldGoNotSolid(self);
+	if ( other->client ) {
+		forcefieldRelation_t relation = G_GetForcefieldRelation( other - g_entities, self );
+
+		if ( relation == FFR_SELF || relation == FFR_TEAM ) {
+			// let self or teamates through
+			G_ShieldGoNotSolid( self );
 		}
 	}
 }
@@ -1060,7 +1155,7 @@ G_ActivateShield
 After a short delay, create the shield by expanding in all directions.
 ================
 */
-static void G_ActivateShield( gentity_t *ent )
+void G_ActivateShield( gentity_t *ent )
 {
 	trace_t		tr;
 
@@ -1070,6 +1165,8 @@ static void G_ActivateShield( gentity_t *ent )
 	ent->pain = G_ShieldPain;
 	ent->die = G_ShieldDie;
 	ent->touch = G_ShieldTouch;
+
+	modfn.ForcefieldAnnounce( ent, FSE_ACTIVATE );
 
 	// see if we're valid
 	trap_Trace (&tr, ent->r.currentOrigin, ent->r.mins, ent->r.maxs, ent->r.currentOrigin, ent->s.number, CONTENTS_BODY );
@@ -1093,11 +1190,11 @@ static void G_ActivateShield( gentity_t *ent )
 		ent->nextthink = level.time + 1000;
 		ent->think = G_ShieldThink;
 
-		ent->takedamage = qtrue;
+		ent->takedamage = SHIELD_TAKEDAMAGE;
 		trap_LinkEntity(ent);
 
 		// Play raising sound...
-		G_AddEvent(ent, EV_GENERAL_SOUND, shieldActivateSound);
+		modfn.ForcefieldSoundEvent( ent, FSE_ACTIVATE );
 	}
 }
 
@@ -1140,13 +1237,13 @@ static qboolean G_ForcefieldInitialTrace( int clientNum, trace_t *tr ) {
 
 /*
 ================
-G_ForcefieldPlace
+(ModFN) ForcefieldPlace
 
 Sets forcefield in place and starts timer (500ms default) to fully activate it.
 Returns forcefield entity if successfully placed, or NULL if positioning was invalid.
 ================
 */
-static qboolean G_ForcefieldPlace( int clientNum ) {
+gentity_t *ModFNDefault_ForcefieldPlace( int clientNum ) {
 	gentity_t *playerent = &g_entities[clientNum];
 	static const gitem_t *shieldItem = NULL;
 	gentity_t *shield = NULL;
@@ -1166,7 +1263,7 @@ static qboolean G_ForcefieldPlace( int clientNum ) {
 
 	// Trace down for start location
 	if ( !G_ForcefieldInitialTrace( clientNum, &tr ) ) {
-		return qfalse;
+		return NULL;
 	}
 	VectorCopy( tr.endpos, origin );
 	groundEntityNum = tr.entityNum;
@@ -1203,7 +1300,7 @@ static qboolean G_ForcefieldPlace( int clientNum ) {
 
 	// Don't allow excessively small forcefield
 	if ( height < MAX_SHIELD_HEIGHT / 10 || halfWidth < MAX_SHIELD_HEIGHT / 10 ) {
-		return qfalse;
+		return NULL;
 	}
 
 	// Reposition origin to center
@@ -1242,29 +1339,37 @@ static qboolean G_ForcefieldPlace( int clientNum ) {
 
 	// Power up after .5 seconds
 	shield->think = G_ActivateShield;
-	shield->nextthink = level.time + 500;
+	shield->nextthink = level.time + modfn.AdjustGeneralConstant( GC_FORCEFIELD_ACTIVATE_DELAY, 500 );
 
 	// Enable SV_LinkEntity to set additional values for client collision prediction in CG_ClipMoveToEntities
 	shield->r.svFlags |= SVF_SHIELD_BBOX;
 
 	trap_LinkEntity( shield );
 
-	// Play placing sound...
-	G_AddEvent( shield, EV_GENERAL_SOUND, shieldAttachSound );
+	modfn.ForcefieldSoundEvent( shield, FSE_CREATE );
+	modfn.ForcefieldAnnounce( shield, FSE_CREATE );
 
-	return qtrue;
+	return shield;
 }
 
 
 
 //-------------------------------------------------------------- DECOY ACTIVITIES
+
+#define USE_DECOY_SOUND_EFFECTS ( modfn.AdjustGeneralConstant( GC_DECOY_SOUND_EFFECTS, 0 ) )
+
 void DecoyThink(gentity_t *ent)
 {
 	ent->s.apos =(ent->parent)->s.apos;					// Update Current Rotation
 	ent->nextthink = level.time + irandom(2000, 6000);	// Next think between 2 & 8 seconds
 
 	(ent->count) --;									// Count Down
-	if (ent->count<0)			G_FreeEntity(ent);		// Time To Erase The Ent
+	if (ent->count<0) {									// Time To Erase The Ent
+		if ( USE_DECOY_SOUND_EFFECTS ) {
+			G_Sound( ent, G_SoundIndex( "sound/movers/doors/borgfieldon.wav" ) );
+		}
+		G_FreeEntity(ent);
+	}
 }
 
 qboolean PlaceDecoy(gentity_t *ent)
@@ -1327,6 +1432,10 @@ qboolean PlaceDecoy(gentity_t *ent)
 		//   The Phaser and Dreadnought (Arc Welder) weapons are rendered on the
 		//   client side differently, and cannot be used by the decoy
 
+		if ( USE_DECOY_SOUND_EFFECTS ) {
+			G_AddEvent( decoy, EV_GENERAL_SOUND, G_SoundIndex( "sound/movers/switches/replicator.wav" ) );
+		}
+
 		return qtrue;						// SUCCESS
 	}
 	else
@@ -1355,8 +1464,7 @@ void G_GiveHoldable( gclient_t *client, holdable_t item )
 Called when player triggers the holdable transporter powerup.
 ================
 */
-LOGFUNCTION_VOID( ModFNDefault_PortableTransporterActivate, ( int clientNum ),
-		( clientNum ), "G_MODFN_PORTABLETRANSPORTERACTIVATE" ) {
+void ModFNDefault_PortableTransporterActivate( int clientNum ) {
 	// get rid of transporter and go to random spawnpoint
 	gentity_t *ent = &g_entities[clientNum];
 	vec3_t	origin, angles;
@@ -1453,7 +1561,7 @@ void ClientEvents( gentity_t *ent, int oldEventSequence ) {
 			// if we haven't placed it yet, place it
 			if (0 == ent->client->ps.stats[STAT_USEABLE_PLACED])
 			{
-				if ( PlaceDetpack(ent) )
+				if ( modfn.DetpackPlace( ent - g_entities ) )
 				{
 					ent->client->ps.stats[STAT_USEABLE_PLACED] = 1;
 					trap_SendServerCommand( ent-g_entities, "cp \"CHARGE PLACED\"" );
@@ -1475,14 +1583,10 @@ void ClientEvents( gentity_t *ent, int oldEventSequence ) {
 			break;
 
 		case EV_USE_ITEM4:		// portable shield
-			if ( !G_ForcefieldPlace( ent - g_entities ) )
+			if ( !modfn.ForcefieldPlace( ent - g_entities ) )
 			{//couldn't place it
 				ent->client->ps.stats[STAT_HOLDABLE_ITEM] = (BG_FindItemForHoldable( HI_SHIELD ) - bg_itemlist);
 				trap_SendServerCommand( ent-g_entities, "cp \"NO ROOM TO PLACE FORCE FIELD\"" );
-			}
-			else
-			{
-				trap_SendServerCommand( ent-g_entities, "cp \"FORCE FIELD PLACED\"" );
 			}
 			break;
 
@@ -1566,8 +1670,7 @@ Returns true if time to respawn dead player has been reached. Called with volunt
 is pressing the respawn button, and voluntary false to check for forced respawns.
 ==============
 */
-LOGFUNCTION_RET( qboolean, ModFNDefault_CheckRespawnTime, ( int clientNum, qboolean voluntary ),
-		( clientNum, voluntary ), "G_MODFN_CHECKRESPAWNTIME" ) {
+qboolean ModFNDefault_CheckRespawnTime( int clientNum, qboolean voluntary ) {
 	gclient_t *client = &level.clients[clientNum];
 
 	if ( voluntary && level.time > client->respawnKilledTime + 1700 ) {
@@ -1598,7 +1701,7 @@ int ModFNDefault_PmoveFixedLength( qboolean isBot ) {
 (ModFN) PmoveInit
 ==============
 */
-LOGFUNCTION_VOID( ModFNDefault_PmoveInit, ( int clientNum, pmove_t *pmove ), ( clientNum, pmove ), "G_MODFN_PMOVEINIT" ) {
+void ModFNDefault_PmoveInit( int clientNum, pmove_t *pmove ) {
 	gclient_t *client = &level.clients[clientNum];
 
 	memset( pmove, 0, sizeof( *pmove ) );
@@ -1614,6 +1717,7 @@ LOGFUNCTION_VOID( ModFNDefault_PmoveInit, ( int clientNum, pmove_t *pmove ), ( c
 	pmove->pointcontents = trap_PointContents;
 	pmove->debugLevel = g_debugMove.integer;
 	pmove->noFootsteps = ( g_dmflags.integer & DF_NO_FOOTSTEPS ) > 0;
+	pmove->modifyFireRate = modfn.ModifyFireRate;
 	pmove->modifyAmmoUsage = modfn.ModifyAmmoUsage;
 }
 
@@ -1625,8 +1729,7 @@ Process triggers and other operations after player move(s) have completed.
 This may be called 0, 1, or multiple times per input usercmd depending on move partitioning.
 ==============
 */
-LOGFUNCTION_VOID( ModFNDefault_PostPmoveActions, ( pmove_t *pmove, int clientNum, int oldEventSequence ),
-		( pmove, clientNum, oldEventSequence ), "G_MODFN_POSTPMOVEACTIONS" ) {
+void ModFNDefault_PostPmoveActions( pmove_t *pmove, int clientNum, int oldEventSequence ) {
 	gentity_t *ent = &g_entities[clientNum];
 	gclient_t *client = &level.clients[clientNum];
 
@@ -1682,7 +1785,7 @@ LOGFUNCTION_VOID( ModFNDefault_PostPmoveActions, ( pmove_t *pmove, int clientNum
 Performs player movement corresponding to a single input usercmd from the client.
 ==============
 */
-LOGFUNCTION_VOID( ModFNDefault_RunPlayerMove, ( int clientNum ), ( clientNum ), "G_MODFN_RUNPLAYERMOVE" ) {
+void ModFNDefault_RunPlayerMove( int clientNum, qboolean spectator ) {
 	gclient_t *client = &level.clients[clientNum];
 	playerState_t *ps = &client->ps;
 	pmove_t pmove;
@@ -1707,7 +1810,9 @@ static void SpectatorThink( gentity_t *ent, usercmd_t *ucmd ) {
 		client->ps.pm_type = PM_SPECTATOR;
 		client->ps.speed = 400;	// faster than normal
 
-		modfn.RunPlayerMove( ent - g_entities );
+		modfn.RunPlayerMove( ent - g_entities, qtrue );
+	} else {
+		modfn.FollowSpectatorThink( ent - g_entities );
 	}
 
 	// attack button cycles through spectators
@@ -1826,7 +1931,7 @@ void ClientThink_real( gentity_t *ent ) {
 
 	oldEventSequence = client->ps.eventSequence;
 
-	modfn.RunPlayerMove( clientNum );
+	modfn.RunPlayerMove( clientNum, qfalse );
 
 	// check for eventTime reset
 	if ( ent->client->ps.eventSequence != oldEventSequence ) {
@@ -2007,13 +2112,6 @@ void ClientEndFrame( gentity_t *ent ) {
 	// apply all the damage taken this frame
 	G_DamageFeedback (ent);
 
-	// add the EF_CONNECTION flag if we haven't gotten commands recently
-	if ( level.time - ent->client->lastCmdTime > 1000 ) {
-		ent->s.eFlags |= EF_CONNECTION;
-	} else {
-		ent->s.eFlags &= ~EF_CONNECTION;
-	}
-
 	ent->client->ps.stats[STAT_HEALTH] = ent->health;	// FIXME: get rid of ent->health...
 
 	G_SetClientSound (ent);
@@ -2021,4 +2119,11 @@ void ClientEndFrame( gentity_t *ent ) {
 	// set the latest infor
 	BG_PlayerStateToEntityState( &ent->client->ps, &ent->s, qtrue );
 	G_ExternalizePlayerEvents( ent - g_entities );
+
+	// add the EF_CONNECTION flag if we haven't gotten commands recently
+	if ( level.time - ent->client->lastCmdTime > 1000 ) {
+		ent->s.eFlags |= EF_CONNECTION;
+	} else {
+		ent->s.eFlags &= ~EF_CONNECTION;
+	}
 }
