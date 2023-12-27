@@ -321,6 +321,10 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 	G_Printf ("gamename: %s\n", GAMEVERSION);
 	G_Printf ("gamedate: %s\n", __DATE__);
 
+
+G_Printf ("---------------------Tron Mod ---------------------");//lob
+
+
 	init_tonextint(qtrue);
 	srand( randomSeed );
 
