@@ -55,6 +55,10 @@ MOD_FUNCTION_DEF( PostRunFrame, void, ( VOID1 ),
 MOD_FUNCTION_DEF( PostGameShutdown, void, ( PREFIX1 qboolean restart ),
 		( PREFIX2 restart ), )
 
+// Called after CalculateRanks completes.
+MOD_FUNCTION_DEF( PostCalculateRanks, void, ( VOID1 ),
+		( VOID2 ), )
+
 // Called when level.matchState has been updated.
 MOD_FUNCTION_DEF( MatchStateTransition, void, ( PREFIX1 matchState_t oldState, matchState_t newState ),
 		( PREFIX2 oldState, newState ), )
@@ -89,9 +93,8 @@ MOD_FUNCTION_DEF( ExitLevel, void, ( VOID1 ),
 // (connection, spawn, disconnect, etc.)
 //////////////////////////
 
-// Called at beginning of ClientConnect when a valid client is connecting.
-// Note that client structures have not yet been initialized at this point.
-MOD_FUNCTION_DEF( PreClientConnect, void, ( PREFIX1 int clientNum, qboolean firstTime, qboolean isBot ),
+// Called after a player is added to the game.
+MOD_FUNCTION_DEF( PostClientConnect, void, ( PREFIX1 int clientNum, qboolean firstTime, qboolean isBot ),
 		( PREFIX2 clientNum, firstTime, isBot ), )
 
 // Called when a player is ready to respawn.
@@ -150,6 +153,10 @@ MOD_FUNCTION_DEF( CheckJoinAllowed, qboolean, ( PREFIX1 int clientNum, join_allo
 MOD_FUNCTION_DEF( CheckRespawnTime, qboolean, ( PREFIX1 int clientNum, qboolean voluntary ),
 		( PREFIX2 clientNum, voluntary ), return )
 
+// Returns true if follow spectators will cycle to this client by default.
+MOD_FUNCTION_DEF( EnableCycleFollow, qboolean, ( PREFIX1 int clientNum ),
+		( PREFIX2 clientNum ), return )
+
 //////////////////////////
 // client misc
 //////////////////////////
@@ -177,6 +184,10 @@ MOD_FUNCTION_DEF( SpawnCenterPrintMessage, void, ( PREFIX1 int clientNum, client
 MOD_FUNCTION_DEF( SpawnTransporterEffect, void, ( PREFIX1 int clientNum, clientSpawnType_t spawnType ),
 		( PREFIX2 clientNum, spawnType ), )
 
+// Activate or deactivate spawn invulnerability on client.
+MOD_FUNCTION_DEF( SetClientGhosting, void, ( PREFIX1 int clientNum, qboolean active ),
+		( PREFIX2 clientNum, active ), )
+
 // Retrieves player model string for client, performing any mod conversions as needed.
 MOD_FUNCTION_DEF( GetPlayerModel, void, ( PREFIX1 int clientNum, const char *userinfo, char *output, unsigned int outputSize ),
 		( PREFIX2 clientNum, userinfo, output, outputSize ), )
@@ -184,6 +195,9 @@ MOD_FUNCTION_DEF( GetPlayerModel, void, ( PREFIX1 int clientNum, const char *use
 // Generates awards message string for specified client.
 MOD_FUNCTION_DEF( CalculateAwards, void, ( PREFIX1 int clientNum, char *msg ),
 		( PREFIX2 clientNum, msg ), )
+
+// Determines which weapon to display for player on the winner podium.
+MOD_FUNCTION_DEF( PodiumWeapon, weapon_t, ( PREFIX1 int clientNum ), ( PREFIX2 clientNum ), return )
 
 //////////////////////////
 // weapon related
@@ -197,29 +211,58 @@ MOD_FUNCTION_DEF( AdjustWeaponConstant, int, ( PREFIX1 weaponConstant_t wcType, 
 MOD_FUNCTION_DEF( PostFireProjectile, void, ( PREFIX1 gentity_t *projectile ),
 		( PREFIX2 projectile ), )
 
+// Called when missile hits something.
+MOD_FUNCTION_DEF( MissileImpact, void, ( PREFIX1 gentity_t *ent, trace_t *trace ),
+		( PREFIX2 ent, trace ), )
+
 // Generate random number for weapon shot variation that can be predicted on client.
 MOD_FUNCTION_DEF( WeaponPredictableRNG, unsigned int, ( PREFIX1 int clientNum ),
 		( PREFIX2 clientNum ), return )
+
+// Support adding effects to certain weapon events.
+MOD_FUNCTION_DEF( AddWeaponEffect, void, ( PREFIX1 weaponEffect_t weType, gentity_t *ent, trace_t *trace ),
+		( PREFIX2 weType, ent, trace ), )
 
 //////////////////////////
 // combat related
 // (damage, knockback, death, scoring, etc.)
 //////////////////////////
 
+// Called when a player or entity takes damage.
+MOD_FUNCTION_DEF( Damage, void, ( PREFIX1 gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
+		vec3_t dir, vec3_t point, int damage, int dflags, int mod ),
+		( PREFIX2 targ, inflictor, attacker, dir, point, damage, dflags, mod ), )
+
 // Allows adding or modifying damage flags.
 MOD_FUNCTION_DEF( ModifyDamageFlags, int, ( PREFIX1 gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 		vec3_t dir, vec3_t point, int damage, int dflags, int mod ),
 		( PREFIX2 targ, inflictor, attacker, dir, point, damage, dflags, mod ), return )
+
+// Returns effective g_dmgmult value.
+// Called separately for both damage and knockback calculation, differentiated by knockbackMode parameter.
+MOD_FUNCTION_DEF( GetDamageMult, float, ( PREFIX1 gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
+		vec3_t dir, vec3_t point, int damage, int dflags, int mod, qboolean knockbackMode ),
+		( PREFIX2 targ, inflictor, attacker, dir, point, damage, dflags, mod, knockbackMode ), return )
 
 // Returns mass for knockback calculations.
 MOD_FUNCTION_DEF( KnockbackMass, float, ( PREFIX1 gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 		vec3_t dir, vec3_t point, int damage, int dflags, int mod ),
 		( PREFIX2 targ, inflictor, attacker, dir, point, damage, dflags, mod ), return )
 
+// Apply knockback to players when taking damage.
+MOD_FUNCTION_DEF( ApplyKnockback, void, ( PREFIX1 gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
+		vec3_t dir, vec3_t point, int damage, int dflags, int mod, float knockback ),
+		( PREFIX2 targ, inflictor, attacker, dir, point, damage, dflags, mod, knockback ), )
+
 // Deals damage from explosion-type sources.
 MOD_FUNCTION_DEF( RadiusDamage, qboolean, ( PREFIX1 vec3_t origin, gentity_t *attacker, float damage, float radius,
 		gentity_t *ignore, int dflags, int mod ),
 		( PREFIX2 origin, attacker, damage, radius, ignore, dflags, mod ), return )
+
+// Play some weapon-specific effects when player is killed.
+MOD_FUNCTION_DEF( PlayerDeathEffect, void, ( PREFIX1 gentity_t *self, gentity_t *inflictor, gentity_t *attacker,
+		int contents, int killer, int meansOfDeath ),
+		( PREFIX2 self, inflictor, attacker, contents, killer, meansOfDeath ), )
 
 // Creates a corpse entity for dead player. Returns body if created, null otherwise.
 MOD_FUNCTION_DEF( CopyToBodyQue, gentity_t *, ( PREFIX1 int clientNum ),
@@ -238,13 +281,43 @@ MOD_FUNCTION_DEF( CheckReplaceItem, gitem_t *, ( PREFIX1 gitem_t *item ),
 MOD_FUNCTION_DEF( CheckItemSpawnDisabled, qboolean, ( PREFIX1 gitem_t *item ),
 		( PREFIX2 item ), return )
 
+// Temporarily suppresses item from spawning, but doesn't permanently remove it.
+// If suppressed, returns number of milliseconds until next check, otherwise returns 0.
+MOD_FUNCTION_DEF( CheckItemSuppressed, int, ( PREFIX1 gentity_t *item ),
+		( PREFIX2 item ), return )
+
+// Returns number of milliseconds to delay spawning item at start of level,
+// or 0 for no delay.
+MOD_FUNCTION_DEF( ItemInitialSpawnDelay, int, ( PREFIX1 gentity_t *ent ),
+		( PREFIX2 ent ), return )
+
+// Allow mods to change item respawn time. Called ahead of g_adaptRespawn adjustment.
+MOD_FUNCTION_DEF( AdjustItemRespawnTime, float, ( PREFIX1 float time, const gentity_t *ent ),
+		( PREFIX2 time, ent ), return )
+
 // Returns the effective number of players to use for g_adaptRespawn calculation.
 MOD_FUNCTION_DEF( AdaptRespawnNumPlayers, int, ( VOID1 ),
 		( VOID2 ), return )
 
+// Check if player is allowed to pick up item.
+MOD_FUNCTION_DEF( CanItemBeGrabbed, qboolean, ( PREFIX1 gentity_t *item, int clientNum ),
+		( PREFIX2 item, clientNum ), return )
+
 // Check if item can be tossed on death/disconnect.
 MOD_FUNCTION_DEF( CanItemBeDropped, qboolean, ( PREFIX1 gitem_t *item, int clientNum ),
 		( PREFIX2 item, clientNum ), return )
+
+// Set the client origin to use when tossing items.
+MOD_FUNCTION_DEF( ItemTossOrigin, void, ( PREFIX1 int clientNum, vec3_t originOut ),
+		( PREFIX2 clientNum, originOut ), )
+
+// Returns number of milliseconds until dropped item expires (0 = never expires).
+MOD_FUNCTION_DEF( ItemDropExpireTime, int, ( PREFIX1 const gitem_t *item ),
+		( PREFIX2 item ), return )
+
+// Adds ammo when player picks up either a weapon or ammo item.
+MOD_FUNCTION_DEF( AddAmmoForItem, void, ( PREFIX1 int clientNum, gentity_t *item, int weapon, int count ),
+		( PREFIX2 clientNum, item, weapon, count ), )
 
 // Can be used to add additional registered items, which are added to a configstring for
 // client caching purposes.
@@ -257,6 +330,41 @@ MOD_FUNCTION_DEF( AddRegisteredItems, void, ( VOID1 ),
 
 // Called when player triggers the holdable transporter powerup.
 MOD_FUNCTION_DEF( PortableTransporterActivate, void, ( PREFIX1 int clientNum ),
+		( PREFIX2 clientNum ), )
+
+// Called when player triggers the portable forcefield powerup.
+// Returns entity if forcefield successfully placed, NULL if location invalid.
+MOD_FUNCTION_DEF( ForcefieldPlace, gentity_t *, ( PREFIX1 int clientNum ),
+		( PREFIX2 clientNum ), return )
+
+// Play sound effects on forcefield events such as creation and removal.
+MOD_FUNCTION_DEF( ForcefieldSoundEvent, void, ( PREFIX1 gentity_t *ent, forcefieldEvent_t event ),
+		( PREFIX2 ent, event ), )
+
+// Play informational messages or sounds on forcefield events.
+MOD_FUNCTION_DEF( ForcefieldAnnounce, void, ( PREFIX1 gentity_t *ent, forcefieldEvent_t event ),
+		( PREFIX2 ent, event ), )
+
+// Called when player triggers the detpack powerup.
+// Returns entity if detpack successfully placed, NULL if location invalid.
+MOD_FUNCTION_DEF( DetpackPlace, gentity_t *, ( PREFIX1 int clientNum ),
+		( PREFIX2 clientNum ), return )
+
+// Called when a detpack is being destroyed due to weapons fire or timeout.
+// Normally causes a small explosion but not full detonation.
+MOD_FUNCTION_DEF( DetpackShot, void, ( PREFIX1 gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int damage, int meansOfDeath ),
+		( PREFIX2 self, inflictor, attacker, damage, meansOfDeath ), )
+
+// Play additional sounds and effects to accompany detpack explosion.
+MOD_FUNCTION_DEF( DetpackExplodeEffects, void, ( PREFIX1 gentity_t *detpack ),
+		( PREFIX2 detpack ), )
+
+// Remove any placed detpack owned by a player who was just killed.
+MOD_FUNCTION_DEF( PlayerDeathDiscardDetpack, void, ( PREFIX1 int clientNum ),
+		( PREFIX2 clientNum ), )
+
+// Check for firing seeker powerup. Called once per second in ClientTimerActions.
+MOD_FUNCTION_DEF( CheckFireSeeker, void, ( PREFIX1 int clientNum ),
 		( PREFIX2 clientNum ), )
 
 //////////////////////////
@@ -294,13 +402,22 @@ MOD_FUNCTION_DEF( PmoveInit, void, ( PREFIX1 int clientNum, pmove_t *pmove ),
 		( PREFIX2 clientNum, pmove ), )
 
 // Performs player movement corresponding to a single input usercmd from the client.
-MOD_FUNCTION_DEF( RunPlayerMove, void, ( PREFIX1 int clientNum ),
+// Called for both active players and free moving spectators, but not follow spectators.
+MOD_FUNCTION_DEF( RunPlayerMove, void, ( PREFIX1 int clientNum, qboolean spectator ),
+		( PREFIX2 clientNum, spectator ), )
+
+// Called in place of RunPlayerMove for follow spectators.
+MOD_FUNCTION_DEF( FollowSpectatorThink, void, ( PREFIX1 int clientNum ),
 		( PREFIX2 clientNum ), )
 
 // Process triggers and other operations after player move(s) have completed.
 // This may be called 0, 1, or multiple times per input usercmd depending on move partitioning.
 MOD_FUNCTION_DEF( PostPmoveActions, void, ( PREFIX1 pmove_t *pmove, int clientNum, int oldEventSequence ),
 		( PREFIX2 pmove, clientNum, oldEventSequence ), )
+
+// Adjust weapon fire rate.
+MOD_FUNCTION_DEF( ModifyFireRate, int, ( PREFIX1 int defaultInterval, int weapon, qboolean alt ),
+		( PREFIX2 defaultInterval, weapon, alt ), return )
 
 // Adjust weapon ammo usage.
 MOD_FUNCTION_DEF( ModifyAmmoUsage, int, ( PREFIX1 int defaultValue, int weapon, qboolean alt ),
@@ -341,6 +458,14 @@ MOD_FUNCTION_DEF( TrapTrace, void, ( PREFIX1 trace_t *results, const vec3_t star
 		const vec3_t end, int passEntityNum, int contentmask, int modFlags ),
 		( PREFIX2 results, start, mins, maxs, end, passEntityNum, contentmask, modFlags ), )
 
+// Called to set certain configstrings during level spawn.
+MOD_FUNCTION_DEF( SetSpawnCS, void, ( PREFIX1 int num, const char *defaultValue ),
+		( PREFIX2 num, defaultValue ), )
+
+// Called when a team scores a point in CTF.
+MOD_FUNCTION_DEF( PostFlagCapture, void, ( PREFIX1 team_t capturingTeam ),
+		( PREFIX2 capturingTeam ), )
+
 //////////////////////////
 // mod-specific
 //////////////////////////
@@ -361,6 +486,11 @@ MOD_FUNCTION_DEF( IsBorgQueen, qboolean, ( PREFIX1 int clientNum ),
 // only called from mod code; uses separate modfn_lcl structure
 //////////////////////////
 
+// Support modifying integer constants in the mod code.
+// Intended for simple cases that don't justify a separate mod function.
+MOD_FUNCTION_LOCAL( AdjustModConstant, int, ( PREFIX1 modConstant_t mcType, int defaultValue ),
+		( PREFIX2 mcType, defaultValue ), return )
+
 // Called after main mod initialization is complete.
 MOD_FUNCTION_LOCAL( PostModInit, void, ( VOID1 ),
 		( VOID2 ), )
@@ -370,6 +500,11 @@ MOD_FUNCTION_LOCAL( PostModInit, void, ( VOID1 ),
 // Requires: ModModcfgCS_Init() from comp_modcfg_cs.c
 MOD_FUNCTION_LOCAL( AddModConfigInfo, void, ( PREFIX1 char *info ),
 		( PREFIX2 info ), )
+
+// Allows mods to add values to the client state info shared with the engine.
+// Requires: ModGameInfo_Init() from feat_game_info.c
+MOD_FUNCTION_LOCAL( AddGameInfoClient, void, ( PREFIX1 int clientNum, info_string_t *info ),
+		( PREFIX2 clientNum, info ), )
 
 // Performs processing/conversion of player model to fit mod requirements.
 // Writes empty string to use random model instead.
@@ -384,6 +519,24 @@ MOD_FUNCTION_LOCAL( RandomPlayerModel, void, ( PREFIX1 int clientNum, const char
 		unsigned int outputSize ),
 		( PREFIX2 clientNum, userinfo, output, outputSize ), )
 
+// Prints a message when player is blocked from joining team by join limit module.
+// type will be CJA_SETTEAM or CJA_SETCLASS (not called for other types).
+// Requires: ModJoinLimit_Init() from comp_join_limit.c
+MOD_FUNCTION_LOCAL( JoinLimitMessage, void, ( PREFIX1 int clientNum, join_allowed_type_t type, team_t targetTeam ),
+		( PREFIX2 clientNum, type, targetTeam ), )
+
+// Allows configuring forcefield behavior parameters.
+// Requires: ModForcefield_Init() from comp_forcefield.c
+MOD_FUNCTION_LOCAL( ForcefieldConfig, void, ( PREFIX1 modForcefield_config_t *config ),
+		( PREFIX2 config ), )
+
+// Returns action to take due to player touching forcefield.
+// Can be called with clientNum -1 and forcefield NULL, as a test for info message purposes.
+// Requires: ModForcefield_Init() from comp_forcefield.c
+MOD_FUNCTION_LOCAL( ForcefieldTouchResponse, modForcefield_touchResponse_t,
+		( PREFIX1 forcefieldRelation_t relation, int clientNum, gentity_t *forcefield ),
+		( PREFIX2 relation, clientNum, forcefield ), return )
+
 // Determine whether portable transporter activates borg teleport mode or regular teleport.
 // Requires: ModHoldableTransporter_Init() from comp_holdable_transporter.c
 MOD_FUNCTION_LOCAL( BorgTeleportEnabled, qboolean, ( PREFIX1 int clientNum ),
@@ -393,6 +546,13 @@ MOD_FUNCTION_LOCAL( BorgTeleportEnabled, qboolean, ( PREFIX1 int clientNum ),
 // Requires: ModHoldableTransporter_Init() from comp_holdable_transporter.c
 MOD_FUNCTION_LOCAL( PostBorgTeleport, void, ( PREFIX1 int clientNum ),
 		( PREFIX2 clientNum), )
+
+// Called to determine alt fire mode for given weapon.
+// Valid return values are the server alt swap codes in cg_weapons.c (u, n, s, N, S, f, F)
+// Call ModModcfgCS_Static_Update when values might have changed to trigger update.
+// Requires: ModAltFireConfig_Init() from comp_alt_fire_config.c
+MOD_FUNCTION_LOCAL( AltFireConfig, char, ( PREFIX1 weapon_t weapon ),
+		( PREFIX2 weapon ), return )
 
 // Allows configuring the parameters for when the game exits from intermission to next map.
 // Call ModIntermissionReady_Shared_UpdateConfig() to trigger call to load new changes.

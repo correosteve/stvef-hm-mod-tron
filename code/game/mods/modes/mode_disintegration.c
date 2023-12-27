@@ -19,7 +19,7 @@ static struct {
 Player starts with just a rifle.
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(SpawnConfigureClient), ( MODFN_CTV, int clientNum ), ( MODFN_CTN, clientNum ), "G_MODFN_SPAWNCONFIGURECLIENT" ) {
+static void MOD_PREFIX(SpawnConfigureClient)( MODFN_CTV, int clientNum ) {
 	gentity_t *ent = &g_entities[clientNum];
 	gclient_t *client = &level.clients[clientNum];
 
@@ -70,23 +70,8 @@ static int MOD_PREFIX(AdjustGeneralConstant)( MODFN_CTV, generalConstant_t gcTyp
 Don't use up any ammo when firing.
 ==============
 */
-LOGFUNCTION_SRET( int, MOD_PREFIX(ModifyAmmoUsage), ( MODFN_CTV, int defaultValue, int weapon, qboolean alt ),
-		( MODFN_CTN, defaultValue, weapon, alt ), "G_MODFN_MODIFYAMMOUSAGE" ) {
+static int MOD_PREFIX(ModifyAmmoUsage)( MODFN_CTV, int defaultValue, int weapon, qboolean alt ) {
 	return 0;
-}
-
-/*
-================
-(ModFN) PmoveInit
-
-Enable alt attack mode.
-================
-*/
-LOGFUNCTION_SVOID( MOD_PREFIX(PmoveInit), ( MODFN_CTV, int clientNum, pmove_t *pmove ),
-		( clientNum, pmove ), "G_MODFN_PMOVEINIT" ) {
-	MODFN_NEXT( PmoveInit, ( MODFN_NC, clientNum, pmove ) );
-
-	pmove->pModDisintegration = qtrue;
 }
 
 /*
@@ -96,8 +81,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PmoveInit), ( MODFN_CTV, int clientNum, pmove_t *p
 Don't drop rifles on death.
 ============
 */
-LOGFUNCTION_SRET( qboolean, MOD_PREFIX(CanItemBeDropped), ( MODFN_CTV, gitem_t *item, int clientNum ),
-		( MODFN_CTN, item, clientNum ), "G_MODFN_CANITEMBEDROPPED" ) {
+static qboolean MOD_PREFIX(CanItemBeDropped)( MODFN_CTV, gitem_t *item, int clientNum ) {
 	if ( item->giType == IT_WEAPON ) {
 		return qfalse;
 	}
@@ -112,11 +96,10 @@ LOGFUNCTION_SRET( qboolean, MOD_PREFIX(CanItemBeDropped), ( MODFN_CTV, gitem_t *
 Adjust some damage flags for consistency with original implementation. Probably doesn't make much difference typically.
 ============
 */
-LOGFUNCTION_SRET( int, MOD_PREFIX(ModifyDamageFlags), ( MODFN_CTV, gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
-		vec3_t dir, vec3_t point, int damage, int dflags, int mod ),
-		( MODFN_CTN, targ, inflictor, attacker, dir, point, damage, dflags, mod ), "G_MODFN_MODIFYDAMAGEFLAGS" ) {
+static int MOD_PREFIX(ModifyDamageFlags)( MODFN_CTV, gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
+		vec3_t dir, vec3_t point, int damage, int dflags, int mod ) {
 	if ( mod == MOD_CRIFLE_ALT || mod == MOD_CRIFLE_ALT_SPLASH ) {
-		return DAMAGE_NO_ARMOR | DAMAGE_NO_INVULNERABILITY;
+		dflags |= DAMAGE_NO_ARMOR | DAMAGE_NO_INVULNERABILITY;
 	}
 
 	return MODFN_NEXT( ModifyDamageFlags, ( MODFN_NC, targ, inflictor, attacker, dir, point, damage, dflags, mod ) );
@@ -129,7 +112,7 @@ LOGFUNCTION_SRET( int, MOD_PREFIX(ModifyDamageFlags), ( MODFN_CTV, gentity_t *ta
 Disable most item pickups.
 ================
 */
-LOGFUNCTION_SRET( qboolean, MOD_PREFIX(CheckItemSpawnDisabled), ( MODFN_CTV, gitem_t *item ), ( MODFN_CTN, item ), "G_MODFN_CHECKITEMSPAWNDISABLED" ) {
+static qboolean MOD_PREFIX(CheckItemSpawnDisabled)( MODFN_CTV, gitem_t *item ) {
 	switch ( item->giType ) {
 		case IT_ARMOR: //useless
 		case IT_WEAPON: //only compression rifle
@@ -158,21 +141,37 @@ LOGFUNCTION_SRET( qboolean, MOD_PREFIX(CheckItemSpawnDisabled), ( MODFN_CTV, git
 
 /*
 ================
+(ModFN) AltFireConfig
+
+Set rifle to alt fire only.
+================
+*/
+static char MOD_PREFIX(AltFireConfig)( MODFN_CTV, weapon_t weapon ) {
+	if ( weapon == WP_COMPRESSION_RIFLE ) {
+		return 'F';
+	}
+	return MODFN_NEXT( AltFireConfig, ( MODFN_NC, weapon ) );
+}
+
+/*
+================
 ModDisintegration_Init
 ================
 */
-LOGFUNCTION_VOID( ModDisintegration_Init, ( void ), (), "G_MOD_INIT G_DISINTEGRATION" ) {
+void ModDisintegration_Init( void ) {
 	if ( EF_WARN_ASSERT( !MOD_STATE ) ) {
 		modcfg.mods_enabled.disintegration = qtrue;
 		MOD_STATE = G_Alloc( sizeof( *MOD_STATE ) );
+
+		ModAltFireConfig_Init();
 
 		MODFN_REGISTER( SpawnConfigureClient, ++modePriorityLevel );
 		MODFN_REGISTER( AdjustWeaponConstant, ++modePriorityLevel );
 		MODFN_REGISTER( AdjustGeneralConstant, ++modePriorityLevel );
 		MODFN_REGISTER( ModifyAmmoUsage, ++modePriorityLevel );
-		MODFN_REGISTER( PmoveInit, ++modePriorityLevel );
 		MODFN_REGISTER( CanItemBeDropped, ++modePriorityLevel );
 		MODFN_REGISTER( ModifyDamageFlags, ++modePriorityLevel );
 		MODFN_REGISTER( CheckItemSpawnDisabled, ++modePriorityLevel );
+		MODFN_REGISTER( AltFireConfig, ++modePriorityLevel );
 	}
 }

@@ -285,13 +285,6 @@ static void G_RegisterCvars( void ) {
 	#include "g_cvar_defs.h"
 	#undef CVAR_DEF
 
-	// check g_gametype range
-	if ( g_gametype.integer < 0 || g_gametype.integer >= GT_MAX_GAME_TYPE ) {
-		G_Printf( "g_gametype %i is out of range, defaulting to 0\n", g_gametype.integer );
-		trap_Cvar_Set( "g_gametype", "0" );
-		G_UpdateTrackedCvar( &g_gametype );
-	}
-
 	// configure g_needpass auto update
 	G_RegisterCvarCallback( &g_password, G_UpdateNeedPass, qtrue );
 }
@@ -321,6 +314,13 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 	G_Printf ("gamename: %s\n", GAMEVERSION);
 	G_Printf ("gamedate: %s\n", __DATE__);
 
+	// set read only cvars
+	// can be changed afterwards by mods
+	trap_Cvar_Register( NULL, "gamename", GAMEVERSION, CVAR_SERVERINFO | CVAR_ROM );
+	trap_Cvar_Set( "gamename", GAMEVERSION );
+	trap_Cvar_Register( NULL, "gamedate", __DATE__, CVAR_ROM );
+	trap_Cvar_Set( "gamedate", __DATE__ );
+
 	init_tonextint(qtrue);
 	srand( randomSeed );
 
@@ -332,6 +332,15 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 	level.matchState = MS_INIT;
 	level.restartClientsPending = ( restart && G_RetrieveGlobalSessionValue( "numConnected" ) );
 	level.warmupRestarting = ( restart && G_RetrieveGlobalSessionValue( "warmupRestarting" ) );
+
+	// check g_gametype range
+	{
+		int gametype = trap_Cvar_VariableIntegerValue( "g_gametype" );
+		if ( gametype < 0 || gametype >= GT_MAX_GAME_TYPE ) {
+			G_Printf( "g_gametype %i is out of range, defaulting to 0\n", gametype );
+			trap_Cvar_Set( "g_gametype", "0" );
+		}
+	}
 
 	G_ModsInit();
 
@@ -572,7 +581,7 @@ int QDECL SortRanks( const void *a, const void *b ) {
 Set CS_SCORES* configstrings during CalculateRanks.
 ============
 */
-LOGFUNCTION_VOID( ModFNDefault_SetScoresConfigStrings, ( void ), (), "G_MODFN_SETSCORESCONFIGSTRINGS" ) {
+void ModFNDefault_SetScoresConfigStrings( void ) {
 	if ( g_gametype.integer >= GT_TEAM ) {
 		trap_SetConfigstring( CS_SCORES1, va("%i", level.teamScores[TEAM_RED] ) );
 		trap_SetConfigstring( CS_SCORES2, va("%i", level.teamScores[TEAM_BLUE] ) );
@@ -681,6 +690,9 @@ void CalculateRanks( void ) {
 	// if we waited until next frame, simultaneous events like multiple players being hit by explosion
 	// could be handled incorrectly
 	G_CheckExitRules();
+
+	// run mod activities
+	modfn.PostCalculateRanks();
 }
 
 
@@ -832,7 +844,7 @@ void G_ClearObjectives( void )
 Execute change to next round or map when intermission completes.
 =============
 */
-LOGFUNCTION_VOID( ModFNDefault_ExitLevel, ( void ), (), "G_MATCHSTATE" ) {
+void ModFNDefault_ExitLevel( void ) {
 	trap_SendConsoleCommand( EXEC_APPEND, "vstr nextmap\n" );
 }
 
@@ -1024,7 +1036,7 @@ Called every frame and after CalculateRanks, which is called on events like
 Not called if warmup or intermission is already in progress.
 ==================
 */
-LOGFUNCTION_VOID( ModFNDefault_CheckExitRules, ( void ), (), "G_MODFN_CHECKEXITRULES" ) {
+void ModFNDefault_CheckExitRules( void ) {
 	int			i;
 	gclient_t	*cl;
 

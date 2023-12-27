@@ -28,7 +28,7 @@ Only use the predictable functions if prediction is actually enabled (it could h
 cheating security implications).
 ======================
 */
-LOGFUNCTION_SRET( unsigned int, MOD_PREFIX(WeaponPredictableRNG), ( MODFN_CTV, int clientNum ), ( MODFN_CTN, clientNum ), "G_MODFN_WEAPONPREDICTABLERNG" ) {
+static unsigned int MOD_PREFIX(WeaponPredictableRNG)( MODFN_CTV, int clientNum ) {
 	if ( PREDICTION_ENABLED && G_AssertConnectedClient( clientNum ) ) {
 		return BG_PredictableRNG_Rand( &MOD_STATE->clients[clientNum].rng, level.clients[clientNum].ps.commandTime );
 	}
@@ -56,11 +56,29 @@ ModPCClientPredict_AddInfo
 */
 static void ModPCClientPredict_AddInfo( char *info ) {
 	char buffer[256];
-	Q_strncpyz( buffer, "ver:" BG_WEAPON_PREDICT_VERSION, sizeof( buffer ) );
+	const char *version;
+	
+	// If uam is enabled, use the new version string to block old client versions from
+	// enabling weapon prediction, to avoid incompatibilities.
+	version = "uxb09a9y";
+	if ( modcfg.mods_enabled.uam ) {
+		version = "uxb09a9y-2";
+	}
+	Com_sprintf( buffer, sizeof( buffer ), "ver:%s", version );
+
+	ModPCClientPredict_AddWeaponConstant( buffer, sizeof( buffer ), WC_USE_IMOD_RIFLE, 0, "imodRifle" );
 
 	if ( ModPingcomp_Static_ProjectileCompensationEnabled() ) {
 		Q_strcat( buffer, sizeof( buffer ), " proj:1" );
 		ModPCClientPredict_AddWeaponConstant( buffer, sizeof( buffer ), WC_USE_TRIPMINES, 0, "tm" );
+		ModPCClientPredict_AddWeaponConstant( buffer, sizeof( buffer ), WC_SCAV_VELOCITY, 1500, "ps4p" );
+		ModPCClientPredict_AddWeaponConstant( buffer, sizeof( buffer ), WC_STASIS_VELOCITY, 1100, "ps5p" );
+		ModPCClientPredict_AddWeaponConstant( buffer, sizeof( buffer ), WC_DN_SEARCH_DIST, 256, "ps9a" );
+		ModPCClientPredict_AddWeaponConstant( buffer, sizeof( buffer ), WC_BORG_PROJ_VELOCITY, 1000, "psbp" );
+
+		if ( modfn_lcl.AdjustModConstant( MC_SEEKER_ACCELERATOR_MODE, 0 ) ) {
+			Q_strcat( buffer, sizeof( buffer ), " seekerAccel:1" );
+		}
 	}
 
 	Info_SetValueForKey( info, "weaponPredict", buffer );
@@ -103,7 +121,7 @@ static void ModPCClientPredict_CvarCallback( trackedCvar_t *cvar ) {
 (ModFN) AddModConfigInfo
 ==============
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(AddModConfigInfo), ( MODFN_CTV, char *info ), ( MODFN_CTN, info ), "G_MODFN_ADDMODCONFIGINFO" ) {
+static void MOD_PREFIX(AddModConfigInfo)( MODFN_CTV, char *info ) {
 	MODFN_NEXT( AddModConfigInfo, ( MODFN_NC, info ) );
 
 	if ( PREDICTION_ENABLED ) {
@@ -116,7 +134,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(AddModConfigInfo), ( MODFN_CTV, char *info ), ( MO
 (ModFN) PostRunFrame
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PostRunFrame), ( MODFN_CTV ), ( MODFN_CTN ), "G_MODFN_POSTRUNFRAME" ) {
+static void MOD_PREFIX(PostRunFrame)( MODFN_CTV ) {
 	MODFN_NEXT( PostRunFrame, ( MODFN_NC ) );
 
 	if ( PREDICTION_ENABLED ) {
@@ -129,7 +147,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PostRunFrame), ( MODFN_CTV ), ( MODFN_CTN ), "G_MO
 ModPCClientPredict_Init
 ================
 */
-LOGFUNCTION_VOID( ModPCClientPredict_Init, ( void ), (), "G_MOD_INIT" ) {
+void ModPCClientPredict_Init( void ) {
 	if ( !MOD_STATE ) {
 		MOD_STATE = G_Alloc( sizeof( *MOD_STATE ) );
 

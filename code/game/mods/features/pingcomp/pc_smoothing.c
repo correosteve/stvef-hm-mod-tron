@@ -23,13 +23,15 @@
 // Skip storing snaps less than this many milliseconds from the previous one
 #define MINIMUM_SNAP_LENGTH 5
 
-// Workaround for QVM compiler bugs when doing float/char conversion with regular VectorCopy
+// Workaround for float/char conversion issues with QVM VectorCopy
+// See VectorCopy definition in q_shared.h
 #define VECTORCOPY_INT(a,b) ((b)[0]=(int)(a)[0],(b)[1]=(int)(a)[1],(b)[2]=(int)(a)[2])
 
 typedef struct {
 	int commandTime;
 	vec3_t origin;
 	vec3_t viewangles;
+	vec3_t velocity;
 	unsigned char liftCount;
 	char mins[3];
 	char maxs[3];
@@ -44,10 +46,15 @@ typedef struct {
 	qboolean deadOnMover;
 	unsigned char liftCount;
 	float lastMoveZ;
+	float lastLiftZ;
 } smoothing_client_t;
 
 static struct {
 	smoothing_client_t clients[MAX_SMOOTHING_CLIENTS];
+
+	// Set while G_Damage is in progress
+	qboolean currentDamage;
+	vec3_t currentDamageOldVelocity;
 } *MOD_STATE;
 
 /*
@@ -64,6 +71,7 @@ static void ModPCSmoothing_ReadClientSnap( int clientNum, smoothing_client_snap_
 
 	snap->commandTime = client->ps.commandTime;
 	VectorCopy( client->ps.origin, snap->origin );
+	VectorCopy( client->ps.velocity, snap->velocity );
 	VectorCopy( client->ps.viewangles, snap->viewangles );
 	VECTORCOPY_INT( ent->r.mins, snap->mins );
 	VECTORCOPY_INT( ent->r.maxs, snap->maxs );
@@ -77,20 +85,14 @@ static void ModPCSmoothing_ReadClientSnap( int clientNum, smoothing_client_snap_
 ModPCSmoothing_ApplyClientSnap
 
 Apply stored client position to entity position that will be sent out to other clients.
-
-Call with skipOriginZ true if the snap has not yet caught up to a recent lift movement, to avoid
-overwriting the lifted position and e.g. shifting the client through the bottom of the lift.
 ==============
 */
-static void ModPCSmoothing_ApplyClientSnap( int clientNum, const smoothing_client_snap_t *snap, qboolean skipOriginZ ) {
+static void ModPCSmoothing_ApplyClientSnap( int clientNum, const smoothing_client_snap_t *snap ) {
 	gentity_t *ent = &g_entities[clientNum];
-
-	ent->s.pos.trBase[0] = snap->origin[0];
-	ent->s.pos.trBase[1] = snap->origin[1];
-	if ( !skipOriginZ ) {
-		ent->s.pos.trBase[2] = snap->origin[2];
-	}
+	VectorCopy( snap->origin, ent->s.pos.trBase );
+	SnapVector( ent->s.pos.trBase );	// maybe not ideal, but network savings do seem significant
 	VectorCopy( snap->viewangles, ent->s.apos.trBase );
+	SnapVector( ent->s.apos.trBase );
 	ent->s.angles2[1] = (int)snap->movementDir;
 	ent->s.legsAnim = snap->legsAnim;
 }
@@ -104,9 +106,12 @@ and increment the lift counter.
 ==============
 */
 static void ModPCSmoothing_CheckLiftMove( int clientNum ) {
-	if ( MOD_STATE->clients[clientNum].lastMoveZ != level.clients[clientNum].ps.origin[2] ) {
-		MOD_STATE->clients[clientNum].lastMoveZ = level.clients[clientNum].ps.origin[2];
-		MOD_STATE->clients[clientNum].liftCount++;
+	gclient_t *client = &level.clients[clientNum];
+	smoothing_client_t *modclient = &MOD_STATE->clients[clientNum];
+	if ( modclient->lastMoveZ != client->ps.origin[2] ) {
+		modclient->lastMoveZ = client->ps.origin[2];
+		modclient->lastLiftZ = client->ps.origin[2];
+		modclient->liftCount++;
 	}
 }
 
@@ -172,7 +177,8 @@ Returns qtrue on success, qfalse on error.
 ==============
 */
 static qboolean ModPCSmoothing_RetrieveClientSnap( int clientNum, int time, smoothing_client_snap_t *snap ) {
-	int counter = MOD_STATE->clients[clientNum].snapCounter;
+	smoothing_client_t *modclient = &MOD_STATE->clients[clientNum];
+	int counter = modclient->snapCounter;
 	if ( counter > 0 ) {
 		int maxSnapIndex = counter - 1;
 		int minSnapIndex = counter - MAX_CLIENT_SNAPS > 0 ? counter - MAX_CLIENT_SNAPS : 0;
@@ -204,6 +210,11 @@ static qboolean ModPCSmoothing_RetrieveClientSnap( int clientNum, int time, smoo
 
 			ModPCSmoothing_LerpVector( current_snap->origin, next_snap->origin, lerpFraction, snap->origin );
 			snap->commandTime = time;
+		}
+
+		// if lift is causing z movement, patch the z origin to avoid floating above/below the lift
+		if ( snap->liftCount != modclient->liftCount ) {
+			snap->origin[2] = modclient->lastLiftZ;
 		}
 
 		return qtrue;
@@ -238,21 +249,6 @@ qboolean ModPCSmoothing_Static_ShiftClient( int clientNum, Smoothing_ShiftInfo_t
 				return qfalse;
 			}
 
-			if ( !ModPCDeadMove_Static_DeadMoveActive( clientNum ) ) {
-				// Try to initiate dead move
-				if ( ModPCSmoothing_RetrieveClientSnap( clientNum, level.time - ModPCSmoothingOffset_Shared_GetOffset( clientNum ), &snap ) ) {
-					if ( snap.liftCount != modclient->liftCount ) {
-						// If player died on a lift, just disable smoothing until they respawn. This can cause the
-						// player to visually snap to the playerstate position a bit, but is usually pretty minor
-						// and works adequately for this special case.
-						modclient->deadOnMover = qtrue;
-						return qfalse;
-					}
-
-					ModPCDeadMove_Static_InitDeadMove( clientNum, snap.origin );
-				}
-			}
-
 			// Try to retrieve dead move position
 			if ( ModPCDeadMove_Static_ShiftClient( clientNum, info_out ) ) {
 				return qtrue;
@@ -264,8 +260,7 @@ qboolean ModPCSmoothing_Static_ShiftClient( int clientNum, Smoothing_ShiftInfo_t
 		// Apply smoothed position to client entity.
 		targetTime = level.time - ModPCSmoothingOffset_Shared_GetOffset( clientNum );
 		if ( ModPCSmoothing_RetrieveClientSnap( clientNum, targetTime, &snap ) ) {
-			qboolean liftMoved = snap.liftCount != modclient->liftCount ? qtrue : qfalse;
-			ModPCSmoothing_ApplyClientSnap( clientNum, &snap, liftMoved );
+			ModPCSmoothing_ApplyClientSnap( clientNum, &snap );
 			if ( info_out ) {
 				VECTORCOPY_INT( snap.mins, info_out->mins );
 				VECTORCOPY_INT( snap.maxs, info_out->maxs );
@@ -287,9 +282,68 @@ Use smoothed position when creating body entity so it stays in the same visible 
 as the player entity body.
 =============
 */
-LOGFUNCTION_SRET( gentity_t *, MOD_PREFIX(CopyToBodyQue), ( MODFN_CTV, int clientNum ), ( MODFN_CTN, clientNum ), "G_MODFN_COPYTOBODYQUE" ) {
+static gentity_t *MOD_PREFIX(CopyToBodyQue)( MODFN_CTV, int clientNum ) {
 	ModPCSmoothing_Static_ShiftClient( clientNum, NULL );
 	return MODFN_NEXT( CopyToBodyQue, ( MODFN_NC, clientNum ) );
+}
+
+/*
+================
+(ModFN) PostPlayerDie
+================
+*/
+static void MOD_PREFIX(PostPlayerDie)( MODFN_CTV, gentity_t *self, gentity_t *inflictor, gentity_t *attacker,
+		int meansOfDeath, int *awardPoints ) {
+	int clientNum = self - g_entities;
+	gclient_t *client = &level.clients[clientNum];
+	smoothing_client_t *modclient = &MOD_STATE->clients[clientNum];
+	smoothing_client_snap_t snap;
+
+	MODFN_NEXT( PostPlayerDie, ( MODFN_NC, self, inflictor, attacker, meansOfDeath, awardPoints ) );
+
+	if ( ModPCSmoothing_RetrieveClientSnap( clientNum, level.time - ModPCSmoothingOffset_Shared_GetOffset( clientNum ), &snap ) ) {
+		if ( snap.liftCount != modclient->liftCount ) {
+			// If player died on a lift, disable time shifting until they respawn. This can cause the
+			// player to visually snap to the playerstate position a bit, but is usually pretty minor
+			// and works adequately for this special case.
+			modclient->deadOnMover = qtrue;
+		} else if ( meansOfDeath == MOD_TRIGGER_HURT && modfn_lcl.AdjustModConstant( MC_PINGCOMP_NO_TH_DEAD_MOVE, 0 ) ) {
+			// If mod disables dead move for trigger hurt, keep using time-shifted position with no
+			// move splitting.
+		} else if ( VectorCompare( client->ps.velocity, vec3_origin ) ) {
+			// If velocity was cleared by death effects also start the dead move with no velocity.
+			ModPCDeadMove_Static_InitDeadMove( clientNum, snap.origin, vec3_origin );
+		} else if ( MOD_STATE->currentDamage ) {
+			// If killed through G_Damage, start the dead move with time-shifted velocity but add in
+			// any knockback that was added during the hit.
+			vec3_t knockback;
+			vec3_t newVelocity;
+			VectorSubtract( client->ps.velocity, MOD_STATE->currentDamageOldVelocity, knockback );
+			VectorAdd( snap.velocity, knockback, newVelocity );
+			ModPCDeadMove_Static_InitDeadMove( clientNum, snap.origin, newVelocity );
+		} else {
+			ModPCDeadMove_Static_InitDeadMove( clientNum, snap.origin, snap.velocity );
+		}
+	}
+}
+
+/*
+================
+(ModFN) Damage
+
+Store current velocity ahead of damage so knockback can be calculated.
+================
+*/
+static void MOD_PREFIX(Damage)( MODFN_CTV, gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
+			vec3_t dir, vec3_t point, int damage, int dflags, int mod ) {
+	if ( targ->client ) {
+		MOD_STATE->currentDamage = qtrue;
+		VectorCopy( targ->client->ps.velocity, MOD_STATE->currentDamageOldVelocity );
+	}
+
+	MODFN_NEXT( Damage, ( MODFN_NC, targ, inflictor, attacker, dir, point, damage, dflags, mod ) );
+
+	MOD_STATE->currentDamage = qfalse;
 }
 
 /*
@@ -297,11 +351,13 @@ LOGFUNCTION_SRET( gentity_t *, MOD_PREFIX(CopyToBodyQue), ( MODFN_CTV, int clien
 ModPCSmoothing_Init
 ================
 */
-LOGFUNCTION_VOID( ModPCSmoothing_Init, ( void ), (), "G_MOD_INIT" ) {
+void ModPCSmoothing_Init( void ) {
 	if ( !MOD_STATE ) {
 		MOD_STATE = G_Alloc( sizeof( *MOD_STATE ) );
 
 		MODFN_REGISTER( CopyToBodyQue, MODPRIORITY_GENERAL );
+		MODFN_REGISTER( PostPlayerDie, MODPRIORITY_GENERAL );
+		MODFN_REGISTER( Damage, MODPRIORITY_LOW );
 
 		ModPlayerMove_Init();	// for ModPCSmoothing_Static_RecordClientMove callback
 		ModPCSmoothingDebug_Init();

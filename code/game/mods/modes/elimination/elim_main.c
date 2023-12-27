@@ -11,18 +11,24 @@
 #include "mods/modes/elimination/elim_local.h"
 
 typedef struct {
-	qboolean eliminated;
-	qboolean eliminatedSpect;	// eliminated and respawned as spectator
-	int score;		// player's true score, even if PERS_SCORE is modified
+	qboolean eliminated;		// eliminated (may still be in death animation)
+	qboolean eliminatedSpect;	// eliminated and respawned as spectator (death animation complete)
+
+	// In FFA mode:
+	// All non-eliminated players have the same score, which equals the total number of players
+	// eliminated since the round started (numEliminated). For eliminated players, score is the
+	// order they were eliminated: 0 = first player eliminated, 1 = second player eliminated, etc.
+	//
+	// In team mode:
+	// Score is the number of players eliminated by this player.
+	int score;
 } elimination_client_t;
 
 static struct {
 	elimination_client_t clients[MAX_CLIENTS];
-	trackedCvar_t g_noJoinTimeout;
 
 	// Current round state
 	int numEliminated;
-	int joinLimitTime;
 } *MOD_STATE;
 
 /*
@@ -42,7 +48,7 @@ int ModElimination_Static_CountPlayersAlive( void ) {
 			gclient_t *client = &level.clients[i];
 			elimination_client_t *modclient = &MOD_STATE->clients[i];
 
-			if ( client->pers.connected >= CON_CONNECTING && !modclient->eliminated && !modfn.SpectatorClient( i ) ) {
+			if ( client->pers.connected == CON_CONNECTED && !modclient->eliminated && !modfn.SpectatorClient( i ) ) {
 				++count;
 			}
 		}
@@ -69,7 +75,7 @@ int ModElimination_Shared_CountPlayersAliveTeam( team_t team, int ignoreClientNu
 		gclient_t *client = &level.clients[i];
 		elimination_client_t *modclient = &MOD_STATE->clients[i];
 
-		if ( client->pers.connected >= CON_CONNECTING && client->sess.sessionTeam == team &&
+		if ( client->pers.connected == CON_CONNECTED && client->sess.sessionTeam == team &&
 				ignoreClientNum != i && !modclient->eliminated && !modfn.SpectatorClient( i ) ) {
 			++count;
 		}
@@ -91,27 +97,14 @@ qboolean ModElimination_Static_IsPlayerEliminated( int clientNum ) {
 
 /*
 ================
-ModElimination_Shared_MatchLocked
+(ModFN) AddGameInfoClient
 
-Match is considered locked if g_noJoinTimeout has been reached, or if one or more players
-have been eliminated.
+Share player eliminated status with engine.
 ================
 */
-qboolean ModElimination_Shared_MatchLocked( void ) {
-	EF_ERR_ASSERT( MOD_STATE );
-
-	if ( level.matchState >= MS_ACTIVE ) {
-		if ( MOD_STATE->numEliminated > 0 ) {
-			return qtrue;
-		}
-
-		else if ( MOD_STATE->g_noJoinTimeout.integer > 0 &&
-				level.time >= MOD_STATE->joinLimitTime + ( MOD_STATE->g_noJoinTimeout.integer * 1000 ) ) {
-			return qtrue;
-		}
-	}
-
-	return qfalse;
+static void MOD_PREFIX(AddGameInfoClient)( MODFN_CTV, int clientNum, info_string_t *info ) {
+	MODFN_NEXT( AddGameInfoClient, ( MODFN_NC, clientNum, info ) );
+	Info_SetValueForKey_Big( info->s, "eliminated", MOD_STATE->clients[clientNum].eliminated ? "1" : "0" );
 }
 
 /*
@@ -170,8 +163,7 @@ static int MOD_PREFIX(EffectiveScore)( MODFN_CTV, int clientNum, effectiveScoreT
 Transition recently eliminated players into spectator mode.
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PreClientSpawn), ( MODFN_CTV, int clientNum, clientSpawnType_t spawnType ),
-		( MODFN_CTN, clientNum, spawnType ), "G_MODFN_PRECLIENTSPAWN" ) {
+static void MOD_PREFIX(PreClientSpawn)( MODFN_CTV, int clientNum, clientSpawnType_t spawnType ) {
 	gclient_t *client = &level.clients[clientNum];
 	elimination_client_t *modclient = &MOD_STATE->clients[clientNum];
 
@@ -186,14 +178,8 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PreClientSpawn), ( MODFN_CTV, int clientNum, clien
 Print info messages to clients during ClientSpawn.
 ============
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(SpawnCenterPrintMessage), ( MODFN_CTV, int clientNum, clientSpawnType_t spawnType ),
-		( MODFN_CTN, clientNum, spawnType ), "G_MODFN_SPAWNCENTERPRINTMESSAGE" ) {
+static void MOD_PREFIX(SpawnCenterPrintMessage)( MODFN_CTV, int clientNum, clientSpawnType_t spawnType ) {
 	gclient_t *client = &level.clients[clientNum];
-
-	// Don't print this if warmup sequence is playing or going to be played
-	if ( ModWarmupSequence_Static_SequenceInProgressOrPending() ) {
-		return;
-	}
 
 	if ( client->sess.sessionTeam == TEAM_SPECTATOR || spawnType != CST_RESPAWN ) {
 		trap_SendServerCommand( clientNum, "cp \"Elimination\"" );
@@ -207,8 +193,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(SpawnCenterPrintMessage), ( MODFN_CTV, int clientN
 Force respawn after 3 seconds.
 ==============
 */
-LOGFUNCTION_SRET( qboolean, MOD_PREFIX(CheckRespawnTime), ( MODFN_CTV, int clientNum, qboolean voluntary ),
-		( MODFN_CTN, clientNum, voluntary ), "G_MODFN_CHECKRESPAWNTIME" ) {
+static qboolean MOD_PREFIX(CheckRespawnTime)( MODFN_CTV, int clientNum, qboolean voluntary ) {
 	gclient_t *client = &level.clients[clientNum];
 
 	if ( !voluntary && level.time > client->respawnKilledTime + 3000 ) {
@@ -246,7 +231,7 @@ static int MOD_PREFIX(AdjustGeneralConstant)( MODFN_CTV, generalConstant_t gcTyp
 ModElimination_ExitRound
 ================
 */
-LOGFUNCTION_SVOID( ModElimination_ExitRound, ( team_t winningTeam ), ( winningTeam ), "" ) {
+static void ModElimination_ExitRound( team_t winningTeam ) {
 	if ( g_gametype.integer >= GT_TEAM ) {
 		// Make sure surviving team wins, not just team with most points.
 		level.forceWinningTeam = winningTeam;
@@ -261,7 +246,7 @@ LOGFUNCTION_SVOID( ModElimination_ExitRound, ( team_t winningTeam ), ( winningTe
 (ModFN) CheckExitRules
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(CheckExitRules), ( MODFN_CTV ), ( MODFN_CTN ), "G_MODFN_CHECKEXITRULES" ) {
+static void MOD_PREFIX(CheckExitRules)( MODFN_CTV ) {
 	// Don't go to intermission if nobody was eliminated.
 	if ( MOD_STATE->numEliminated ) {
 		if ( g_gametype.integer >= GT_TEAM ) {
@@ -282,41 +267,16 @@ LOGFUNCTION_SVOID( MOD_PREFIX(CheckExitRules), ( MODFN_CTV ), ( MODFN_CTN ), "G_
 
 /*
 ================
-(ModFN) CheckJoinAllowed
-
-Check if joining or changing team/class is disabled due to match in progress.
+(ModFN) JoinLimitMessage
 ================
 */
-LOGFUNCTION_SRET( qboolean, MOD_PREFIX(CheckJoinAllowed), ( MODFN_CTV, int clientNum, join_allowed_type_t type, team_t targetTeam ),
-		( MODFN_CTN, clientNum, type, targetTeam ), "G_MODFN_CHECKJOINLOCKED" ) {
-	gclient_t *client = &level.clients[clientNum];
-	elimination_client_t *modclient = &MOD_STATE->clients[clientNum];
-
-	if ( ModElimination_Shared_MatchLocked() ) {
-		if ( type == CJA_SETTEAM ) {
-			if ( modclient->eliminated ) {
-				trap_SendServerCommand( clientNum, "cp \"You have been eliminated until next round\"" );
-			} else if ( client->sess.sessionTeam == TEAM_SPECTATOR ) {
-				trap_SendServerCommand( clientNum, "cp \"Wait until next round to join\"" );
-			} else {
-				trap_SendServerCommand( clientNum, "cp \"Wait until next round to change teams\"" );
-			}
-		}
-
-		if ( type == CJA_SETCLASS ) {
-			if ( modclient->eliminated ) {
-				trap_SendServerCommand( clientNum, "cp \"You have been eliminated until next round\"" );
-			} else if ( client->sess.sessionTeam == TEAM_SPECTATOR ) {
-				trap_SendServerCommand( clientNum, "cp \"Wait until next round to join\"" );
-			} else {
-				trap_SendServerCommand( clientNum, "cp \"Wait until next round to change classes\"" );
-			}
-		}
-
-		return qfalse;
+static void MOD_PREFIX(JoinLimitMessage)( MODFN_CTV, int clientNum, join_allowed_type_t type, team_t targetTeam ) {
+	const elimination_client_t *modclient = &MOD_STATE->clients[clientNum];
+	if ( modclient->eliminated ) {
+		trap_SendServerCommand( clientNum, "cp \"You have been eliminated until next round\"" );
+	} else {
+		MODFN_NEXT( JoinLimitMessage, ( MODFN_NC, clientNum, type, targetTeam ) );
 	}
-
-	return MODFN_NEXT( CheckJoinAllowed, ( MODFN_NC, clientNum, type, targetTeam ) );
 }
 
 /*
@@ -324,8 +284,8 @@ LOGFUNCTION_SRET( qboolean, MOD_PREFIX(CheckJoinAllowed), ( MODFN_CTV, int clien
 (ModFN) PostPlayerDie
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PostPlayerDie), ( MODFN_CTV, gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int meansOfDeath, int *awardPoints ),
-		( MODFN_CTN, self, inflictor, attacker, meansOfDeath, awardPoints ), "G_MODFN_POSTPLAYERDIE" ) {
+static void MOD_PREFIX(PostPlayerDie)( MODFN_CTV, gentity_t *self, gentity_t *inflictor, gentity_t *attacker,
+		int meansOfDeath, int *awardPoints ) {
 	int clientNum = self - g_entities;
 	gclient_t *client = &level.clients[clientNum];
 	elimination_client_t *modclient = &MOD_STATE->clients[clientNum];
@@ -336,6 +296,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PostPlayerDie), ( MODFN_CTV, gentity_t *self, gent
 	if ( meansOfDeath != MOD_KNOCKOUT ) {
 		modclient->eliminated = qtrue;
 		MOD_STATE->numEliminated++;
+		ModJoinLimit_Static_StartMatchLock();
 
 		// Normally unused, but set in case some server engine modification wants to access it.
 		self->r.svFlags |= SVF_ELIMINATED;
@@ -381,8 +342,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PostPlayerDie), ( MODFN_CTV, gentity_t *self, gent
 Reset stats and eliminated state when player switches teams or becomes spectator.
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PrePlayerLeaveTeam), ( MODFN_CTV, int clientNum, team_t oldTeam ),
-		( MODFN_CTN, clientNum, oldTeam ), "G_MODFN_PREPLAYERLEAVETEAM" ) {
+static void MOD_PREFIX(PrePlayerLeaveTeam)( MODFN_CTV, int clientNum, team_t oldTeam ) {
 	elimination_client_t *modclient = &MOD_STATE->clients[clientNum];
 
 	MODFN_NEXT( PrePlayerLeaveTeam, ( MODFN_NC, clientNum, oldTeam ) );
@@ -398,8 +358,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PrePlayerLeaveTeam), ( MODFN_CTV, int clientNum, t
 (ModFN) InitClientSession
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(InitClientSession), ( MODFN_CTV, int clientNum, qboolean initialConnect, const info_string_t *info ),
-		( MODFN_CTN, clientNum, initialConnect, info ), "G_MODFN_INITCLIENTSESSION" ) {
+static void MOD_PREFIX(InitClientSession)( MODFN_CTV, int clientNum, qboolean initialConnect, const info_string_t *info ) {
 	elimination_client_t *modclient = &MOD_STATE->clients[clientNum];
 
 	MODFN_NEXT( InitClientSession, ( MODFN_NC, clientNum, initialConnect, info ) );
@@ -411,7 +370,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(InitClientSession), ( MODFN_CTV, int clientNum, qb
 (ModFN) PostRunFrame
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PostRunFrame), ( MODFN_CTV ), ( MODFN_CTN ), "G_MODFN_POSTRUNFRAME" ) {
+static void MOD_PREFIX(PostRunFrame)( MODFN_CTV ) {
 	int i;
 	MODFN_NEXT( PostRunFrame, ( MODFN_NC ) );
 
@@ -454,24 +413,12 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PostRunFrame), ( MODFN_CTV ), ( MODFN_CTN ), "G_MO
 (ModFN) MatchStateTransition
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(MatchStateTransition), ( MODFN_CTV, matchState_t oldState, matchState_t newState ),
-		( MODFN_CTN, oldState, newState ), "G_MODFN_MATCHSTATETRANSITION" ) {
+static void MOD_PREFIX(MatchStateTransition)( MODFN_CTV, matchState_t oldState, matchState_t newState ) {
 	MODFN_NEXT( MatchStateTransition, ( MODFN_NC, oldState, newState ) );
 
 	if ( newState < MS_ACTIVE && !EF_WARN_ASSERT( MOD_STATE->numEliminated == 0 ) ) {
 		// Shouldn't happen - if players were eliminated we should hit CheckExitRules instead.
 		MOD_STATE->numEliminated = 0;
-	}
-
-	// Update join limit timer.
-	if ( newState == MS_ACTIVE ) {
-		G_DedPrintf( "elimination: Starting join limit countdown due to sufficient players.\n" );
-		MOD_STATE->joinLimitTime = level.time;
-	} else {
-		if ( newState < MS_ACTIVE && MOD_STATE->joinLimitTime ) {
-			G_DedPrintf( "elimination: Resetting join limit time due to insufficient players.\n" );
-		}
-		MOD_STATE->joinLimitTime = 0;
 	}
 }
 
@@ -480,20 +427,26 @@ LOGFUNCTION_SVOID( MOD_PREFIX(MatchStateTransition), ( MODFN_CTV, matchState_t o
 ModElimination_Init
 ================
 */
-LOGFUNCTION_VOID( ModElimination_Init, ( void ), (), "G_MOD_INIT G_ELIMINATION" ) {
+void ModElimination_Init( void ) {
 	if ( EF_WARN_ASSERT( !MOD_STATE ) ) {
 		modcfg.mods_enabled.elimination = qtrue;
 		MOD_STATE = G_Alloc( sizeof( *MOD_STATE ) );
 
-		G_RegisterTrackedCvar( &MOD_STATE->g_noJoinTimeout, "g_noJoinTimeout", "120", CVAR_ARCHIVE, qfalse );
-
-		// Support combining with other mods
-		if ( G_ModUtils_GetLatchedValue( "g_pModDisintegration", "0", 0 ) ) {
-			ModDisintegration_Init();
-		} else if ( G_ModUtils_GetLatchedValue( "g_pModSpecialties", "0", 0 ) ) {
-			ModSpecialties_Init();
+		// Don't allow CTF gametype
+		if ( trap_Cvar_VariableIntegerValue( "g_gametype" ) == GT_CTF ) {
+			trap_Cvar_Set( "g_gametype", "0" );
 		}
 
+		// Support combining with other mods
+		if ( !modcfg.mods_enabled.razor ) {
+			if ( G_ModUtils_GetLatchedValue( "g_pModDisintegration", "0", 0 ) ) {
+				ModDisintegration_Init();
+			} else if ( G_ModUtils_GetLatchedValue( "g_pModSpecialties", "0", 0 ) ) {
+				ModSpecialties_Init();
+			}
+		}
+
+		MODFN_REGISTER( AddGameInfoClient, ++modePriorityLevel );
 		MODFN_REGISTER( SpectatorClient, ++modePriorityLevel );
 		MODFN_REGISTER( AdjustScoreboardAttributes, ++modePriorityLevel );
 		MODFN_REGISTER( EffectiveScore, ++modePriorityLevel );
@@ -502,12 +455,15 @@ LOGFUNCTION_VOID( ModElimination_Init, ( void ), (), "G_MOD_INIT G_ELIMINATION" 
 		MODFN_REGISTER( CheckRespawnTime, ++modePriorityLevel );
 		MODFN_REGISTER( AdjustGeneralConstant, ++modePriorityLevel );
 		MODFN_REGISTER( CheckExitRules, ++modePriorityLevel );
-		MODFN_REGISTER( CheckJoinAllowed, ++modePriorityLevel );
+		MODFN_REGISTER( JoinLimitMessage, ++modePriorityLevel );
 		MODFN_REGISTER( PostPlayerDie, ++modePriorityLevel );
 		MODFN_REGISTER( PrePlayerLeaveTeam, ++modePriorityLevel );
 		MODFN_REGISTER( InitClientSession, ++modePriorityLevel );
 		MODFN_REGISTER( PostRunFrame, ++modePriorityLevel );
 		MODFN_REGISTER( MatchStateTransition, ++modePriorityLevel );
+
+		// Disable joining mid-match
+		ModJoinLimit_Init();
 
 		// Initialize additional features
 		ModElimMisc_Init();

@@ -20,6 +20,17 @@ static struct {
 
 /*
 ================
+ModWarmupSequence_Static_ServerCommand
+
+Helper function which can be used for simple server command events.
+================
+*/
+void ModWarmupSequence_Static_ServerCommand( const char *msg ) {
+	trap_SendServerCommand( -1, msg );
+}
+
+/*
+================
 ModWarmupSequence_Static_AddEventToSequence
 
 Adds event to warmup sequence.
@@ -84,14 +95,19 @@ static qboolean ModWarmupSequence_SequenceInProgress( void ) {
 
 /*
 ================
-ModWarmupSequence_Static_SequenceInProgressOrPending
+(ModFN) SpawnCenterPrintMessage
 
-Returns whether warmup sequence is currently running, or pending until more players join.
+Do a rough check to suppress center print messages if warmup sequence is currently running
+or pending, to avoid too much message spam.
 ================
 */
-qboolean ModWarmupSequence_Static_SequenceInProgressOrPending( void ) {
-	return MOD_STATE && ( ( level.matchState == MS_WARMUP && MOD_STATE->sequenceActive ) ||
-			( level.matchState < MS_WARMUP && ModWarmupSequence_GetLength() ) );
+static void MOD_PREFIX(SpawnCenterPrintMessage)( MODFN_CTV, int clientNum, clientSpawnType_t spawnType ) {
+	if ( ModWarmupSequence_SequenceInProgress() ||
+			( level.matchState == MS_INIT && ModWarmupSequence_GetLength() ) ) {
+		return;
+	}
+
+	MODFN_NEXT( SpawnCenterPrintMessage, ( MODFN_NC, clientNum, spawnType ) );
 }
 
 /*
@@ -101,7 +117,7 @@ qboolean ModWarmupSequence_Static_SequenceInProgressOrPending( void ) {
 Returns length in milliseconds to use for warmup if enabled, or <= 0 if warmup disabled.
 ==================
 */
-LOGFUNCTION_SRET( int, MOD_PREFIX(WarmupLength), ( MODFN_CTV ), ( MODFN_CTN ), "G_MODFN_WARMUPLENGTH" ) {
+static int MOD_PREFIX(WarmupLength)( MODFN_CTV ) {
 	int sequenceLength = ModWarmupSequence_GetLength();
 	if ( sequenceLength ) {
 		return sequenceLength;
@@ -115,7 +131,7 @@ LOGFUNCTION_SRET( int, MOD_PREFIX(WarmupLength), ( MODFN_CTV ), ( MODFN_CTN ), "
 (ModFN) PostRunFrame
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(PostRunFrame), ( MODFN_CTV ), ( MODFN_CTN ), "G_MODFN_POSTRUNFRAME" ) {
+static void MOD_PREFIX(PostRunFrame)( MODFN_CTV ) {
 	MODFN_NEXT( PostRunFrame, ( MODFN_NC ) );
 
 	if ( ModWarmupSequence_SequenceInProgress() ) {
@@ -142,8 +158,7 @@ LOGFUNCTION_SVOID( MOD_PREFIX(PostRunFrame), ( MODFN_CTV ), ( MODFN_CTN ), "G_MO
 (ModFN) MatchStateTransition
 ================
 */
-LOGFUNCTION_SVOID( MOD_PREFIX(MatchStateTransition), ( MODFN_CTV, matchState_t oldState, matchState_t newState ),
-		( MODFN_CTN, oldState, newState ), "G_MODFN_MATCHSTATETRANSITION" ) {
+static void MOD_PREFIX(MatchStateTransition)( MODFN_CTV, matchState_t oldState, matchState_t newState ) {
 	MODFN_NEXT( MatchStateTransition, ( MODFN_NC, oldState, newState ) );
 
 	// Clear existing sequence.
@@ -165,10 +180,11 @@ LOGFUNCTION_SVOID( MOD_PREFIX(MatchStateTransition), ( MODFN_CTV, matchState_t o
 ModWarmupSequence_Init
 ================
 */
-LOGFUNCTION_VOID( ModWarmupSequence_Init, ( void ), (), "G_MOD_INIT G_MOD_WARMUPSEQUENCE" ) {
+void ModWarmupSequence_Init( void ) {
 	if ( !MOD_STATE ) {
 		MOD_STATE = G_Alloc( sizeof( *MOD_STATE ) );
 
+		MODFN_REGISTER( SpawnCenterPrintMessage, MODPRIORITY_HIGH );
 		MODFN_REGISTER( WarmupLength, MODPRIORITY_GENERAL );
 		MODFN_REGISTER( PostRunFrame, MODPRIORITY_GENERAL );
 		MODFN_REGISTER( MatchStateTransition, MODPRIORITY_GENERAL );

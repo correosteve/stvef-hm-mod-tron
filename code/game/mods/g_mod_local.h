@@ -15,6 +15,9 @@ typedef struct {
 	qboolean elimination;
 	qboolean disintegration;
 	qboolean actionhero;
+	qboolean uam;
+	qboolean razor;
+	qboolean clanarena;
 } mods_enabled_t;
 
 typedef struct {
@@ -27,6 +30,9 @@ extern mod_config_t modcfg;
 
 int G_ModUtils_GetLatchedValue( const char *cvar_name, const char *default_value, int flags );
 char *G_ModUtils_AllocateString( const char *string );
+const char *G_ModUtils_GetMapName( void );
+qboolean G_ModUtils_ReadGladiatorBoolean( const char *str );
+unsigned int G_ModUtils_ReadGladiatorBitflags( const char *str );
 
 // Mod Function Priority
 
@@ -39,16 +45,73 @@ char *G_ModUtils_AllocateString( const char *string );
 // Priority counter to support last-registered-first-called model for modes
 extern float modePriorityLevel;
 
+// Constants for AdjustModConstant
+
+typedef enum {
+	MC_NONE,
+
+	// feat_bot_adding.c / ModBotAdding_Init
+	MC_BOTADD_PER_TEAM_COUNT,		// bot_minplayers represents number of bots on each team, not total
+	MC_BOTADD_PER_TEAM_ADJUST,		// only add/remove bots from one team per cycle
+	MC_BOTADD_IGNORE_SPECTATORS,	// spectators don't count as players for FFA bot count calculations
+
+	// ping compensation
+	MC_PINGCOMP_NO_TH_DEAD_MOVE,	// don't perform split body movement after trigger hurt death
+
+	// comp_detpack.c / ModDetpack_Init
+	MC_DETPACK_ORIGIN_PATCH,		// use detpack origin for blast, rather than origin of player who placed it
+	MC_DETPACK_GLADIATOR_ANNOUNCEMENTS,		// gladiator-style audio announcements on detpack place/destroy
+	MC_DETPACK_PING_SOUND,			// gladiator-style ping sound effect on detpack
+	MC_DETPACK_DROP_ON_DEATH,		// drop placed detpack at placement location when player dies, instead of destroying
+	MC_DETPACK_INVULNERABLE,		// detpack can't be destroyed by weapons fire
+
+	// comp_seeker.c / ModSeeker_Init
+	MC_SEEKER_SECONDS_PER_SHOT,		// 0 = disable firing altogether
+	MC_SEEKER_MOD_TYPE,				// e.g. MOD_QUANTUM_ALT
+	MC_SEEKER_ACCELERATOR_MODE,		// use Pinball-style projectile acceleration
+
+	// comp_quad_effects.c / ModQuadEffects_Init
+	MC_QUAD_EFFECTS_ENABLED,
+	MC_QUAD_EFFECTS_PINBALL_STYLE,
+
+	// comp_ghost_sparkle.c / ModGhostSparkle_Init
+	MC_GHOST_SPARKLE_ENABLED,
+} modConstant_t;
+
 /* ************************************************************************* */
 // Modes - Modules loaded directly from G_ModsInit to change game mechanics
 /* ************************************************************************* */
 
 void ModActionHero_Init( void );
 void ModAssimilation_Init( void );
+void ModClanArena_Init( void );
 void ModDisintegration_Init( void );
 void ModElimination_Init( void );
+void ModRazor_Init( void );
 void ModSpecialties_Init( void );
 void ModTournament_Init( void );
+void ModUAM_Init( void );
+
+//
+// Elimination
+//
+
+// elim_main.c
+int ModElimination_Static_CountPlayersAlive( void );
+
+// elim_multiround.c
+qboolean ModElimMultiRound_Static_GetMultiRoundEnabled( void );
+int ModElimMultiRound_Static_GetTotalRounds( void );
+int ModElimMultiRound_Static_GetCurrentRound( void );
+qboolean ModElimMultiRound_Static_GetIsTiebreakerRound( void );
+qboolean ModElimMultiRound_Static_GetIsFinalScores( void );
+
+//
+// UAM
+//
+
+// uam_music.c
+void UAMMusic_Static_PlayIntermissionMusic( void );
 
 /* ************************************************************************* */
 // Features - Modules loaded directly from G_ModsInit to add features
@@ -57,6 +120,10 @@ void ModTournament_Init( void );
 void ModAltSwapHandler_Init( void );
 void ModBotAdding_Init( void );
 void ModDebugModfn_Init( void );
+void ModDelayRespawn_Init( void );
+void ModFlagUndercap_Init( void );
+void ModGameInfo_Init( void );
+void ModGladiatorItemEnable_Init( void );
 void ModMiscFeatures_Init( void );
 void ModPingcomp_Init( void );
 void ModPlayerMove_Init( void );
@@ -83,20 +150,64 @@ void ModTeamGroups_Shared_ForceConfigStrings( const char *redGroup, const char *
 // Components - Modules generally only loaded by other modules
 /* ************************************************************************* */
 
+void ModAltFireConfig_Init( void );
 void ModClickToJoin_Init( void );
+void ModDetpack_Init( void );
+void ModEndSound_Init( void );
+void ModFireRateCS_Init( void );
+void ModForcefield_Init( void );
+void ModGhostSparkle_Init( void );
 void ModHoldableTransporter_Init( void );
 void ModIntermissionReady_Init( void );
+void ModJoinLimit_Init( void );
 void ModModcfgCS_Init( void );
 void ModModelGroups_Init( void );
 void ModModelSelection_Init( void );
 void ModPendingItem_Init( void );
-void ModWarmupSequence_Init();
+void ModSeeker_Init( qboolean registerPhoton );
+void ModQuadEffects_Init( void );
+void ModTimelimitCountdown_Init( void );
+void ModWarmupSequence_Init( void );
 
 //
 // Click-to-Join support (comp_clicktojoin.c)
 //
 
 qboolean ModClickToJoin_Static_ActiveForClient( int clientNum );
+
+//
+// Portable Forcefields (comp_forcefield.c)
+//
+
+typedef enum {
+	FFTR_BLOCK,			// don't let player through the forcefield
+	FFTR_KILL,			// kill player who touched the forcefield
+	FFTR_PASS,			// let player through forcefield
+	FFTR_QUICKPASS,		// let player through forcefield without taking it down temporarily
+} modForcefield_touchResponse_t;
+
+typedef struct {
+	// Damage options
+	int health;					// amount of damage forcefields can take
+	int duration;				// length in seconds forcefields last (if no damage taken)
+	qboolean invulnerable;		// don't allow forcefields to be damaged by weapons fire
+
+	// Sound effects
+	const char *loopSound;				// give forcefields a background sound (null for no sound)
+	qboolean alternateExpireSound;		// play alternate sound when forcefield expires (gladiator style when killing ff enabled)
+	qboolean alternatePassSound;		// play alternate sound when temporarily removing forcefield (gladiator style when killing ff disabled)
+	qboolean gladiatorAnnounce;			// play announcements when forcefields are added or removed (gladiator style when killing ff enabled)
+
+	// Misc options
+	qboolean bounceProjectiles;			// when invulnerable is set, grenades/tetrion alt bounce off rather than collide
+	qboolean activateDelayMode;			// add extra delay and sound effect when starting forcefield (gladiator style with g_modUseKillingForcefield 1)
+
+	// Applies to killing forcefields (response type FFTR_KILL)
+	qboolean killForcefieldFlicker;		// play sparkle and sound effect on forcefield when touched (gladiator style)
+	qboolean killPlayerSizzle;			// play sizzling effect on player killed by forcefield (gladiator style)
+} modForcefield_config_t;
+
+qboolean ModForcefield_Static_KillingForcefieldEnabled( void );
 
 //
 // Intermission ready handling (comp_intermissionready.c)
@@ -115,6 +226,13 @@ typedef struct {
 void ModIntermissionReady_Shared_UpdateConfig( void );
 void ModIntermissionReady_Shared_Suspend( void );
 void ModIntermissionReady_Shared_Resume( void );
+
+//
+// Join limit handling (comp_join_limit.c)
+//
+
+qboolean ModJoinLimit_Static_MatchLocked( void );
+void ModJoinLimit_Static_StartMatchLock( void );
 
 //
 // Modcfg Configstring Handling (comp_modcfg_cs.c)
@@ -154,9 +272,9 @@ typedef struct {
 	modWarmupSequenceEvent_t events[MAX_INFO_SEQUENCE_EVENTS];
 } modWarmupSequence_t;
 
+void ModWarmupSequence_Static_ServerCommand( const char *msg );
 void ModWarmupSequence_Static_AddEventToSequence( modWarmupSequence_t *sequence, int time,
 		void ( *operation )( const char *msg ), const char *msg );
-qboolean ModWarmupSequence_Static_SequenceInProgressOrPending( void );
 
 /* ************************************************************************* */
 // Mod Functions

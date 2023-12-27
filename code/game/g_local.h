@@ -85,6 +85,12 @@ typedef enum {
 	MOVER_2TO1
 } moverState_t;
 
+typedef enum {
+	FFR_SELF,	// player's own forcefield
+	FFR_TEAM,	// teamate's forcefield
+	FFR_ENEMY	// enemy forcefield
+} forcefieldRelation_t;
+
 #define SP_PODIUM_MODEL		"models/mapobjects/podium/podium4.md3"
 #define TEAM_PODIUM_MODEL	"models/mapobjects/podium/podium_single.md3"
 
@@ -408,7 +414,7 @@ char *G_NewString( const char *string );
 void DeathmatchScoreboardMessage( gentity_t *ent );
 void BroadcastTeamChange( gclient_t *client, int oldTeam );
 void SetPlayerClassCvar(gentity_t *ent);
-qboolean SetTeam( gentity_t *ent, char *s );
+qboolean SetTeam( gentity_t *ent, char *s, qboolean force );
 void StopFollowing( gentity_t *ent );
 void Cmd_FollowCycle_f( gentity_t *ent, int dir );
 void ClientCommand( int clientNum );
@@ -420,6 +426,7 @@ void G_CheckTeamItems( void );
 void G_RunItem( gentity_t *ent );
 void RespawnItem( gentity_t *ent );
 
+gentity_t *LaunchItem( gitem_t *item, vec3_t origin, vec3_t velocity );
 gentity_t *Drop_Item( gentity_t *ent, gitem_t *item, float angle );
 void G_SpawnItem (gentity_t *ent, gitem_t *item);
 void FinishSpawningItem( gentity_t *ent );
@@ -451,6 +458,7 @@ gentity_t	*G_Spawn (void);
 gentity_t *G_TempEntity( vec3_t origin, int event );
 void	G_Sound( gentity_t *ent, int soundIndex );
 void	G_GlobalSound( int soundIndex );
+void	G_ClientGlobalSound( int soundIndex, int clientNum );
 void	G_FreeEntity( gentity_t *e );
 
 void	G_TouchTriggers (gentity_t *ent);
@@ -486,6 +494,11 @@ qboolean G_RadiusDamage (vec3_t origin, gentity_t *attacker, float damage, float
 #define DAMAGE_NO_INVULNERABILITY	0x00000080	// trek: invulnerability doesn't event protect from this damage
 #define DAMAGE_HALF_NOTLOS			0x00000100	// trek: radius damage still does 1/2 damage to ents that do not have LOS to explosion org but are in radius
 #define DAMAGE_ALL_TEAMS			0x00000200	// trek: damage ignores teamdamage settings
+#define DAMAGE_TRIGGERS_ONLY		0x00000400	// no damage, knockback, or effects, but can push triggers
+#define DAMAGE_NO_HEALTH_DAMAGE		0x00000800	// does triggers, knockback and client effects, and hits armor, but no main health damage
+#define DAMAGE_LIMIT_EFFECTS		0x00001000	// disable certain shield and pain effects
+#define DAMAGE_NO_KNOCKBACK_CAP		0x00002000	// disable 200 knockback cap
+#define DAMAGE_NO_HALF_SELF			0x00004000	// don't reduce self damage by half
 
 //
 // g_missile.c
@@ -522,8 +535,11 @@ void TeleportPlayer( gentity_t *player, vec3_t origin, vec3_t angles, tpType_t t
 // g_weapon.c
 //
 void SnapVectorTowards( vec3_t v, vec3_t to );
+void FireScavengerBullet( gentity_t *ent, vec3_t start, vec3_t dir );
+void FireQuantumBurstAlt( gentity_t *ent, vec3_t start, vec3_t dir );
 void DreadnoughtBurstThink(gentity_t *ent);
 qboolean LogAccuracyHit( gentity_t *target, gentity_t *attacker );
+void G_SetQuadFactor( int clientNum );
 void FireWeapon( gentity_t *ent, qboolean alt_fire );
 qboolean SeekerAcquiresTarget ( gentity_t *ent, vec3_t pos );
 void FireSeeker( gentity_t *owner, gentity_t *target, vec3_t origin);
@@ -603,6 +619,12 @@ int GetFavoriteWeaponForClient(int nClient);
 //
 // g_active.c
 //
+void DetonateDetpack(gentity_t *ent);
+void G_ShieldThink(gentity_t *self);
+void G_ShieldGoNotSolid(gentity_t *self);
+forcefieldRelation_t G_GetForcefieldRelation( int clientNum, gentity_t *shield );
+void G_ShieldTouch(gentity_t *self, gentity_t *other, trace_t *trace);
+void G_ActivateShield( gentity_t *ent );
 void G_GiveHoldable( gclient_t *client, holdable_t item );
 void ClientThink( int clientNum );
 void ClientEndFrame( gentity_t *ent );

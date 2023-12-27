@@ -54,7 +54,7 @@ void DeathmatchScoreboardMessage( gentity_t *ent ) {
 					cl->sess.sessionTeam == TEAM_SPECTATOR ? 0 : cl->ps.persistant[PERS_KILLED]),
 			modfn.AdjustScoreboardAttributes(scoreClientNum, SA_ELIMINATED, 0) );
 		j = strlen(entry);
-		if (stringlength + j > 1024)
+		if (stringlength + j >= sizeof(entry))
 			break;
 		strcpy (string + stringlength, entry);
 		stringlength += j;
@@ -391,8 +391,7 @@ void Cmd_LevelShot_f( gentity_t *ent ) {
 Check if suicide is allowed. If not, prints notification to client.
 =================
 */
-LOGFUNCTION_RET( qboolean, ModFNDefault_CheckSuicideAllowed, ( int clientNum ),
-		( clientNum ), "G_MODFN_CHECKSUICIDEALLOWED" ) {
+qboolean ModFNDefault_CheckSuicideAllowed( int clientNum ) {
 	gclient_t *client = &level.clients[clientNum];
 
 	if( client->pers.suicideTime && client->pers.suicideTime > level.time - 30000 ) {
@@ -518,11 +517,11 @@ Check if client is allowed to join game or change team/class.
 If join was blocked, sends appropriate notification message to client.
 =================
 */
-LOGFUNCTION_RET( qboolean, ModFNDefault_CheckJoinAllowed, ( int clientNum, join_allowed_type_t type, team_t targetTeam ),
-		( clientNum, type, targetTeam ), "G_MODFN_CHECKJOINALLOWED" ) {
+qboolean ModFNDefault_CheckJoinAllowed( int clientNum, join_allowed_type_t type, team_t targetTeam ) {
 	// Check for g_maxGameClients limits
-	if ( g_maxGameClients.integer > 0 && level.numNonSpectatorClients >= g_maxGameClients.integer && type != CJA_SETCLASS ) {
-		if ( type != CJA_AUTOJOIN ) {
+	if ( g_maxGameClients.integer > 0 && level.numNonSpectatorClients >= g_maxGameClients.integer &&
+			type != CJA_SETCLASS && type != CJA_FORCETEAM ) {
+		if ( type != CJA_AUTOJOIN && targetTeam != level.clients[clientNum].sess.sessionTeam ) {
 			trap_SendServerCommand( clientNum, "cp \"Too many players.\"" );
 		}
 
@@ -537,7 +536,7 @@ LOGFUNCTION_RET( qboolean, ModFNDefault_CheckJoinAllowed, ( int clientNum, join_
 SetTeam
 =================
 */
-qboolean SetTeam( gentity_t *ent, char *s ) {
+qboolean SetTeam( gentity_t *ent, char *s, qboolean force ) {
 	gclient_t			*client = ent->client;
 	team_t				team = TEAM_FREE;
 	team_t				oldTeam = client->sess.sessionTeam;
@@ -573,7 +572,7 @@ qboolean SetTeam( gentity_t *ent, char *s ) {
 			team = PickTeam( clientNum );
 		}
 
-		if ( g_teamForceBalance.integer && !( ent->r.svFlags & SVF_BOT ) &&
+		if ( g_teamForceBalance.integer && !( ent->r.svFlags & SVF_BOT ) && !force &&
 				!modfn.AdjustGeneralConstant( GC_DISABLE_TEAM_FORCE_BALANCE, 0 ) ) {
 			int		counts[TEAM_NUM_TEAMS];
 
@@ -598,13 +597,13 @@ qboolean SetTeam( gentity_t *ent, char *s ) {
 		team = TEAM_FREE;
 	}
 
-	// ignore redundant change
-	if ( team != TEAM_SPECTATOR && team == oldTeam ) {
+	// decide if we will allow the change, and print any warning messages
+	if ( team != TEAM_SPECTATOR && !modfn.CheckJoinAllowed( clientNum, force ? CJA_FORCETEAM : CJA_SETTEAM, team ) ) {
 		return qfalse;
 	}
 
-	// decide if we will allow the change
-	if ( team != TEAM_SPECTATOR && !modfn.CheckJoinAllowed( clientNum, CJA_SETTEAM, team ) ) {
+	// ignore redundant change
+	if ( team != TEAM_SPECTATOR && team == oldTeam ) {
 		return qfalse;
 	}
 
@@ -665,7 +664,7 @@ void Cmd_Team_f( gentity_t *ent ) {
 
 	trap_Argv( 1, s, sizeof( s ) );
 
-	SetTeam( ent, s );
+	SetTeam( ent, s, qfalse );
 }
 
 /*
@@ -762,11 +761,22 @@ void Cmd_Follow_f( gentity_t *ent ) {
 
 	// first set them to spectator
 	if ( !modfn.SpectatorClient( ent - g_entities ) ) {
-		SetTeam( ent, "spectator" );
+		SetTeam( ent, "spectator", qfalse );
 	}
 
 	ent->client->sess.spectatorState = SPECTATOR_FOLLOW;
 	ent->client->sess.spectatorClient = i;
+}
+
+/*
+================
+(ModFN) EnableCycleFollow
+
+Returns true if follow spectators will cycle to this client by default.
+================
+*/
+qboolean ModFNDefault_EnableCycleFollow( int clientNum ) {
+	return qtrue;
 }
 
 /*
@@ -785,7 +795,7 @@ void Cmd_FollowCycle_f( gentity_t *ent, int dir ) {
 
 	// first set them to spectator
 	if ( !modfn.SpectatorClient( ent - g_entities ) ) {
-		SetTeam( ent, "spectator" );
+		SetTeam( ent, "spectator", qfalse );
 	}
 
 	if ( dir != 1 && dir != -1 ) {
@@ -813,6 +823,11 @@ void Cmd_FollowCycle_f( gentity_t *ent, int dir ) {
 
 		// can't follow another spectator, including myself
 		if ( modfn.SpectatorClient( clientnum ) ) {
+			continue;
+		}
+
+		// check if mods allow following this player
+		if ( !modfn.EnableCycleFollow( clientnum ) ) {
 			continue;
 		}
 

@@ -17,7 +17,6 @@
 
 
 #define	RESPAWN_ARMOR		20
-#define	RESPAWN_TEAM_WEAPON	30
 #define	RESPAWN_HEALTH		30
 #define	RESPAWN_AMMO		40
 #define	RESPAWN_HOLDABLE	60
@@ -36,21 +35,20 @@ Bots in MP will go to these spots when there's nothing else to get- helps them p
 Returns the effective number of players to use for g_adaptRespawn calculation.
 ================
 */
-LOGFUNCTION_RET( int, ModFNDefault_AdaptRespawnNumPlayers, ( void ), (), "G_MODFN_ADAPTRESPAWNNUMPLAYERS" ) {
+int ModFNDefault_AdaptRespawnNumPlayers( void ) {
 	return level.numPlayingClients;
 }
 
 // For more than four players, adjust the respawn times, up to 1/4.
-int adjustRespawnTime(float respawnTime)
+int adjustRespawnTime(float respawnTime, const gentity_t *ent)
 {
 	int numPlayers;
-	if (!g_adaptRespawn.integer)
-	{
-		return((int)respawnTime);
-	}
+
+	// Peform mod adjustments.
+	respawnTime = modfn.AdjustItemRespawnTime( respawnTime, ent );
 
 	numPlayers = modfn.AdaptRespawnNumPlayers();
-	if (numPlayers > 4)
+	if (g_adaptRespawn.integer && numPlayers > 4 && ent->item->giType != IT_POWERUP)
 	{	// Start scaling the respawn times.
 		if (numPlayers > 32)
 		{	// 1/4 time minimum.
@@ -148,7 +146,7 @@ int Pickup_Powerup( gentity_t *ent, gentity_t *other ) {
 		client->ps.persistant[PERS_REWARD] = REWARD_DENIED;
 	}
 
-	return RESPAWN_POWERUP;
+	return adjustRespawnTime(RESPAWN_POWERUP, ent);
 }
 
 //======================================================================
@@ -167,17 +165,24 @@ int Pickup_Holdable( gentity_t *ent, gentity_t *other )
 	// kef -- log the fact that we picked up this item
 	G_LogWeaponItem(other->s.number, bg_itemlist[nItem].giTag);
 
-	return adjustRespawnTime(RESPAWN_HOLDABLE);
+	return adjustRespawnTime(RESPAWN_HOLDABLE, ent);
 }
 
 
 //======================================================================
 
-void Add_Ammo (gentity_t *ent, int weapon, int count)
-{
-	ent->client->ps.ammo[weapon] += count;
-	if ( ent->client->ps.ammo[weapon] > Max_Ammo[weapon] ) {
-		ent->client->ps.ammo[weapon] = Max_Ammo[weapon];
+/*
+================
+(ModFN) AddAmmoForItem
+
+Adds ammo when player picks up either a weapon or ammo item.
+================
+*/
+void ModFNDefault_AddAmmoForItem( int clientNum, gentity_t *item, int weapon, int count ) {
+	gclient_t *client = &level.clients[clientNum];
+	client->ps.ammo[weapon] += count;
+	if ( client->ps.ammo[weapon] > Max_Ammo[weapon] ) {
+		client->ps.ammo[weapon] = Max_Ammo[weapon];
 	}
 }
 
@@ -191,9 +196,9 @@ int Pickup_Ammo (gentity_t *ent, gentity_t *other)
 		quantity = ent->item->quantity;
 	}
 
-	Add_Ammo (other, ent->item->giTag, quantity);
+	modfn.AddAmmoForItem( other - g_entities, ent, ent->item->giTag, quantity );
 
-	return adjustRespawnTime(RESPAWN_AMMO);
+	return adjustRespawnTime(RESPAWN_AMMO, ent);
 }
 
 //======================================================================
@@ -239,17 +244,17 @@ int Pickup_Weapon (gentity_t *ent, gentity_t *other) {
 	// add the weapon
 	other->client->ps.stats[STAT_WEAPONS] |= ( 1 << ent->item->giTag );
 
-	Add_Ammo( other, ent->item->giTag, quantity );
+	modfn.AddAmmoForItem( other - g_entities, ent, ent->item->giTag, quantity );
 
 	G_LogWeaponPickup(other->s.number, ent->item->giTag);
 
 	// team deathmatch has slow weapon respawns
 	if ( g_gametype.integer == GT_TEAM )
 	{
-		return adjustRespawnTime(RESPAWN_TEAM_WEAPON);
+		return adjustRespawnTime(g_teamWeaponRespawn.integer, ent);
 	}
 
-	return adjustRespawnTime(g_weaponRespawn.integer);
+	return adjustRespawnTime(g_weaponRespawn.integer, ent);
 }
 
 
@@ -283,7 +288,7 @@ int Pickup_Health (gentity_t *ent, gentity_t *other) {
 		return RESPAWN_MEGAHEALTH;			// It also does not adapt like other health pickups.
 	}
 
-	return adjustRespawnTime(RESPAWN_HEALTH);
+	return adjustRespawnTime(RESPAWN_HEALTH, ent);
 }
 
 //======================================================================
@@ -294,10 +299,22 @@ int Pickup_Armor( gentity_t *ent, gentity_t *other ) {
 		other->client->ps.stats[STAT_ARMOR] = other->client->ps.stats[STAT_MAX_HEALTH] * 2;
 	}
 
-	return adjustRespawnTime(RESPAWN_ARMOR);
+	return adjustRespawnTime(RESPAWN_ARMOR, ent);
 }
 
 //======================================================================
+
+/*
+================
+(ModFN) CheckItemSuppressed
+
+Temporarily suppresses item from spawning, but doesn't permanently remove it.
+If suppressed, returns number of milliseconds until next check, otherwise returns 0.
+================
+*/
+int ModFNDefault_CheckItemSuppressed( gentity_t *item ) {
+	return 0;
+}
 
 /*
 ===============
@@ -305,6 +322,13 @@ RespawnItem
 ===============
 */
 void RespawnItem( gentity_t *ent ) {
+	// check if item respawn suppressed
+	int suppressed = modfn.CheckItemSuppressed( ent );
+	if ( suppressed > 0 ) {
+		ent->nextthink = level.time + suppressed;
+		return;
+	}
+
 	// randomly select from teamed entities
 	if (ent->team) {
 		gentity_t	*master;
@@ -345,6 +369,17 @@ void RespawnItem( gentity_t *ent ) {
 	ent->nextthink = 0;
 }
 
+/*
+================
+(ModFN) CanItemBeGrabbed
+
+Check if player is allowed to pick up item.
+================
+*/
+qboolean ModFNDefault_CanItemBeGrabbed( gentity_t *item, int clientNum ) {
+	// the same pickup rules are used for client side and server side
+	return BG_CanItemBeGrabbed( &item->s, &level.clients[clientNum].ps );
+}
 
 /*
 ===============
@@ -359,16 +394,12 @@ void Touch_Item (gentity_t *ent, gentity_t *other, trace_t *trace) {
 	if (other->health < 1)
 		return;		// dead people can't pickup
 
-	// If ghosted, then end the ghost-ness in favor of the pickup.
-	if (other->client->ps.powerups[PW_GHOST] >= level.time)
-	{
-		other->client->ps.powerups[PW_GHOST] = 0;	// Unghost the player.  This
-	}
-
-	// the same pickup rules are used for client side and server side
-	if ( !BG_CanItemBeGrabbed( &ent->s, &other->client->ps ) ) {
+	if ( !modfn.CanItemBeGrabbed( ent, other - g_entities ) ) {
 		return;
 	}
+
+	// If ghosted, then end the ghost-ness in favor of the pickup.
+	modfn.SetClientGhosting( other - g_entities, qfalse );
 
 	G_LogPrintf( "Item: %i %s\n", other->s.number, ent->item->classname );
 
@@ -419,6 +450,12 @@ void Touch_Item (gentity_t *ent, gentity_t *other, trace_t *trace) {
 		// tell us which client fired off this global sound
 		te->s.otherEntityNum = other->s.number;
 		te->r.svFlags |= SVF_BROADCAST;
+	}
+
+	// special seeker pickup sound
+	if ( ent->item->giType == IT_POWERUP && ent->item->giTag == PW_SEEKER &&
+			modfn.AdjustGeneralConstant( GC_SEEKER_PICKUP_SOUND, 0 ) ) {
+		G_ClientGlobalSound( G_SoundIndex( "sound/enemies/borg/alcoveout.wav" ), other - g_entities );
 	}
 
 	// fire item targets
@@ -489,6 +526,17 @@ void Touch_Item (gentity_t *ent, gentity_t *other, trace_t *trace) {
 
 /*
 ================
+(ModFN) ItemDropExpireTime
+
+Returns number of milliseconds until dropped item expires (0 = never expires).
+================
+*/
+int ModFNDefault_ItemDropExpireTime( const gitem_t *item ) {
+	return 30000;
+}
+
+/*
+================
 LaunchItem
 
 Spawns an item and tosses it forward
@@ -545,8 +593,13 @@ gentity_t *LaunchItem( gitem_t *item, vec3_t origin, vec3_t velocity ) {
 		te->r.svFlags |= SVF_BROADCAST;
 
 	} else { // auto-remove after 30 seconds
-		dropped->think = G_FreeEntity;
-		dropped->nextthink = level.time + 30000;
+		int duration = modfn.ItemDropExpireTime( item );
+		if ( duration > 0 ) {
+			dropped->think = G_FreeEntity;
+			dropped->nextthink = level.time + duration;
+		} else {
+			dropped->think = NULL;
+		}
 	}
 
 	dropped->flags = FL_DROPPED_ITEM;
@@ -554,6 +607,17 @@ gentity_t *LaunchItem( gitem_t *item, vec3_t origin, vec3_t velocity ) {
 	trap_LinkEntity (dropped);
 
 	return dropped;
+}
+
+/*
+================
+(ModFN) ItemTossOrigin
+
+Set the client origin to use when tossing items.
+================
+*/
+void ModFNDefault_ItemTossOrigin( int clientNum, vec3_t originOut ) {
+	VectorCopy( level.clients[clientNum].ps.origin, originOut );
 }
 
 /*
@@ -566,6 +630,7 @@ Spawns an item and tosses it forward
 gentity_t *Drop_Item( gentity_t *ent, gitem_t *item, float angle ) {
 	vec3_t	velocity;
 	vec3_t	angles;
+	vec3_t	origin;
 
 	VectorCopy( ent->s.apos.trBase, angles );
 	angles[YAW] += angle;
@@ -575,7 +640,8 @@ gentity_t *Drop_Item( gentity_t *ent, gitem_t *item, float angle ) {
 	VectorScale( velocity, 150, velocity );
 	velocity[2] += 200 + crandom() * 50;
 
-	return LaunchItem( item, ent->s.pos.trBase, velocity );
+	modfn.ItemTossOrigin( ent - g_entities, origin );
+	return LaunchItem( item, origin, velocity );
 }
 
 
@@ -594,6 +660,24 @@ void Use_Item( gentity_t *ent, gentity_t *other, gentity_t *activator ) {
 
 /*
 ================
+(ModFN) ItemInitialSpawnDelay
+
+Returns number of milliseconds to delay spawning item at start of level,
+or 0 for no delay.
+================
+*/
+int ModFNDefault_ItemInitialSpawnDelay( gentity_t *ent ) {
+	// powerups don't spawn in for a while
+	if ( ent->item->giType == IT_POWERUP ) {
+		float respawn = 45 + crandom() * 15;
+		return respawn * 1000;
+	}
+
+	return 0;
+}
+
+/*
+================
 FinishSpawningItem
 
 Traces down to find where an item should rest, instead of letting them
@@ -603,6 +687,7 @@ free fall from their spawn points
 void FinishSpawningItem( gentity_t *ent ) {
 	trace_t		tr;
 	vec3_t		dest;
+	int			suppressed;
 
 	VectorSet( ent->r.mins, -ITEM_RADIUS, -ITEM_RADIUS, -ITEM_RADIUS );
 	VectorSet( ent->r.maxs, ITEM_RADIUS, ITEM_RADIUS, ITEM_RADIUS );
@@ -649,19 +734,16 @@ void FinishSpawningItem( gentity_t *ent ) {
 		return;
 	}
 
-	// powerups don't spawn in for a while
-	if ( ent->item->giType == IT_POWERUP ) {
-		float	respawn;
-
-		respawn = 45 + crandom() * 15;
-
-		ent->s.eFlags |= EF_NODRAW;
-		ent->r.contents = 0;
-		ent->nextthink = level.time + respawn * 1000;
+	// check if item spawn suppressed
+	suppressed = modfn.ItemInitialSpawnDelay( ent );
+	if ( suppressed <= 0 ) {
+		suppressed = modfn.CheckItemSuppressed( ent );
+	}
+	if ( suppressed > 0 ) {
+		ent->nextthink = level.time + suppressed;
 		ent->think = RespawnItem;
 		return;
 	}
-
 
 	trap_LinkEntity (ent);
 }
@@ -675,8 +757,6 @@ Traces down to find where an item should rest, instead of letting them
 free fall from their spawn points
 ================
 */
-extern void detpack_shot( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int damage, int meansOfDeath );
-
 qboolean FinishSpawningDetpack( gentity_t *ent, int itemIndex )
 {
 	trace_t		tr;
@@ -694,7 +774,7 @@ qboolean FinishSpawningDetpack( gentity_t *ent, int itemIndex )
 	ent->takedamage = 1;
 	ent->health = 5;
 	ent->touch = 0;
-	ent->die = detpack_shot;
+	ent->die = modfn.DetpackShot;
 
 	// useing an item causes it to respawn
 	ent->use = Use_Item;
@@ -827,7 +907,7 @@ Can be used to add additional registered items, which are added to a configstrin
 client caching purposes.
 ================
 */
-LOGFUNCTION_VOID( ModFNDefault_AddRegisteredItems, ( void ), (), "G_MODFN_ADDREGISTEREDITEMS" ) {
+void ModFNDefault_AddRegisteredItems( void ) {
 	// players always start with the base weapon
 	RegisterItem( BG_FindItemForWeapon( WP_PHASER ) );
 	RegisterItem( BG_FindItemForWeapon( WP_COMPRESSION_RIFLE ) );	//this is for the podium at the end, make sure we have the model
@@ -872,8 +952,7 @@ void SaveRegisteredItems( void ) {
 Allows replacing an item with a different item during initial spawn.
 ================
 */
-LOGFUNCTION_RET( gitem_t *, ModFNDefault_CheckReplaceItem, ( gitem_t *item ),
-		( item ), "G_MODFN_CHECKREPLACEITEM" ) {
+gitem_t *ModFNDefault_CheckReplaceItem( gitem_t *item ) {
 	return item;
 }
 
@@ -885,8 +964,7 @@ Allows permanently removing an item during initial spawn.
 Returns qtrue to disable item, qfalse to spawn item normally.
 ================
 */
-LOGFUNCTION_RET( qboolean, ModFNDefault_CheckItemSpawnDisabled, ( gitem_t *item ),
-		( item ), "G_MODFN_CHECKITEMSPAWNDISABLED" ) {
+qboolean ModFNDefault_CheckItemSpawnDisabled( gitem_t *item ) {
 	return qfalse;
 }
 

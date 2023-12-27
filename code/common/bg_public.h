@@ -185,6 +185,7 @@ typedef struct {
 	float		infilJumpFactor;		// default: 2.0
 	float		infilAirAccelFactor;	// default: 2.0
 
+	int			( *modifyFireRate )( int defaultInterval, int weapon, qboolean alt );
 #ifdef MODULE_GAME
 	int			( *modifyAmmoUsage )( int defaultValue, int weapon, qboolean alt );
 #endif
@@ -786,9 +787,6 @@ extern int Max_Ammo[];
 //
 // weapon fire prediction
 //
-
-// random string to verify client/server compatibility
-#define BG_WEAPON_PREDICT_VERSION "uxb09a9y"
 
 #define BG_PREDICTABLE_RANDOM( rand ) ( ( (unsigned int)(rand)&0x7fff ) / ( (float)0x7fff ) )
 #define BG_PREDICTABLE_CRANDOM( rand ) ( 2.0 * ( BG_PREDICTABLE_RANDOM( rand ) - 0.5 ) )
