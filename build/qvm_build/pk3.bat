@@ -8,5 +8,5 @@ rem Verify exes exist
 if not exist %zipper% echo Missing %zipper%&pause&exit
 
 cd output
-%zipper% a -bd -mx=9 -r -y -- tron_qvm.pk3 "vm\*"
+%zipper% a -tzip -bd -mx=0 -r -y -- tron_qvm.pk3 "vm\*"
 cd ..

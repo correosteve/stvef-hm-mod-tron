@@ -74,6 +74,9 @@ gitem_t	bg_itemlist[] =
 	//
 	// WEAPONS
 	//
+/*QUAKED weapon_disc (.3 .3 1) (-16 -16 -16) (16 16 16) suspended
+*/
+
 
 /*QUAKED weapon_phaser (.3 .3 1) (-16 -16 -16) (16 16 16) suspended
 */
@@ -90,7 +93,6 @@ gitem_t	bg_itemlist[] =
 /* precache */ "",
 /* sounds */ ""
 	},
-
 /*QUAKED weapon_compressionrifle (.3 .3 1) (-16 -16 -16) (16 16 16) suspended
 */
 	{
@@ -218,6 +220,20 @@ gitem_t	bg_itemlist[] =
 /* precache */ "",
 /* sounds */ ""
 	},
+
+	{//lob
+		"weapon_disc",
+		"sound/weapons/w_pkup.wav",
+		"models/weapons2/phaser/phaser_w.md3",	//world
+		"models/weapons2/phaser/phaser.md3",	//view
+/* icon */		"icons/w_icon_dreadnought",
+/* pickup */	"Disc",
+		AMMO_PHASER_CLIP,
+		IT_WEAPON,
+		WP_TRON_DISC,
+/* precache */ "",
+/* sounds */ ""
+	},//lob
 
 	//
 	// AMMO ITEMS
@@ -358,6 +374,8 @@ gitem_t	bg_itemlist[] =
 /* precache */ "",
 /* sounds */ ""
 	},
+
+
 
 
 	//
@@ -1280,6 +1298,7 @@ const char *itemnames[MAX_ITEMNAMES] =
 "WEAPON_DISRUPTOR",
 "WEAPON_QUANTUM",
 "WEAPON_DREADNOUGHT",
+"WEAPON_DISC",//lob
 
 "AMMO_COMPRESSIONRIFLE",
 "AMMO_IMOD",

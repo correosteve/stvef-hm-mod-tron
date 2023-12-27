@@ -2509,6 +2509,10 @@ void FireWeapon( gentity_t *ent, qboolean alt_fire )
 		WP_FireBorgWeapon( ent, alt_fire );
 		break;
 
+	case WP_TRON_DISC:
+		WP_FireBorgWeapon( ent, alt_fire );
+		break;
+
 	default:
 // FIXME		G_Error( "Bad ent->s.weapon" );
 		break;

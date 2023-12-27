@@ -189,7 +189,8 @@ char *weaponNameFromIndex[WP_NUM_WEAPONS] =
 	"Dreadnought",
 	"Hypo",
 	"Assimilator",
-	"Borg Weapon"
+	"Borg Weapon",
+		"Disc"//lob
 };
 
 extern char	*modNames[];
