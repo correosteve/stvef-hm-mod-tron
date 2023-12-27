@@ -84,7 +84,7 @@ void TossClientItems( gentity_t *self ) {
 	// weapon that isn't the mg or gauntlet.  Without this, a client
 	// can pick up a weapon, be killed, and not drop the weapon because
 	// their weapon change hasn't completed yet and they are still holding the MG.
-	if ( weapon == WP_PHASER )
+	if ( weapon == WP_PHASER || weapon == WP_TRON_DISC )//lob
 	{
 		if ( self->client->ps.weaponstate == WEAPON_DROPPING ) {
 			weapon = self->client->pers.cmd.weapon;
@@ -232,6 +232,10 @@ char	*modNames[MOD_MAX] = {
 
 	"MOD_RESPAWN",
 	"MOD_EXPLOSION",
+
+//tron
+	"MOD_TRON_DISC",
+
 };//must be kept up to date with bg_public, meansOfDeath_t
 
 /*

@@ -331,6 +331,7 @@ typedef enum {
 	WP_BORG_ASSIMILATOR,	// 10/12/00 jtd -- added for MP patch/gold
 	WP_BORG_WEAPON,			// 10/12/00 jtd -- added for MP patch/gold - merges single player projectile and taser
 	//WP_TRICORDER,			//
+WP_TRON_DISC, //lob
 
 	WP_NUM_WEAPONS
 } weapon_t;
@@ -654,7 +655,17 @@ typedef enum {
 	MOD_RESPAWN,
 	MOD_EXPLOSION,
 
-	MOD_MAX
+
+//tron
+	MOD_TRON_DISC,
+
+
+
+//end
+	MOD_MAX,
+
+
+
 } meansOfDeath_t;
 
 

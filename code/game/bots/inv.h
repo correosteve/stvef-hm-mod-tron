@@ -19,6 +19,8 @@
 #define INVENTORY_SCAVENGER			9
 #define INVENTORY_QUANTUM			10
 
+
+
 //ammo
 
 #define INVENTORY_GRENADES			11
@@ -52,6 +54,8 @@
 #define INVENTORY_HYPO				40
 #define INVENTORY_ASSIMILATOR		41
 #define INVENTORY_BORG_WEAPON		42
+
+#define INVENTORY_TRONDISC          43 //lob
 
 //enemy stuff
 #define ENEMY_HORIZONTAL_DIST		200
@@ -107,3 +111,6 @@
 #define MODELINDEX_HYPO				37
 #define MODELINDEX_ASSIMILATOR		38
 #define MODELINDEX_BORG_WEAPON		39
+
+
+#define MODELINDEX_TRONDISC 		40 //lob

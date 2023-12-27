@@ -653,6 +653,18 @@ void CG_Missile( centity_t *cent, qboolean altfire ) {
 	memset (&ent, 0, sizeof(ent));
 	VectorCopy( cent->lerpOrigin, ent.origin);
 	VectorCopy( cent->lerpOrigin, ent.oldorigin);
+	
+	
+	
+	if ( cent->currentState.weapon == WP_TRON_DISC) {//lob
+		ent.reType = RT_SPRITE;
+		ent.data.sprite.radius = 16;
+		ent.data.sprite.rotation = 0;
+		trap_R_AddRefEntityToScene( &ent );
+		return;
+	}
+
+
 
 	if ( cent->currentState.weapon == WP_QUANTUM_BURST ) {
 		ent.reType = RT_SPRITE;

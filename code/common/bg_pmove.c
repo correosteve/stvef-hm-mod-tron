@@ -1835,6 +1835,9 @@ static void PM_Weapon( void ) {
 		}
 		switch( pm->ps->weapon ) {
 		default:
+		case WP_TRON_DISC://lob
+			addTime = 40;//(inverse) fire rate
+			break;
 		case WP_PHASER:
 			addTime = 100;
 			//If the phaser has been fired, delay the next recharge time

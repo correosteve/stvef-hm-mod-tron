@@ -1078,8 +1078,10 @@ void ModFNDefault_SpawnConfigureClient( int clientNum ) {
 	gentity_t *ent = &g_entities[clientNum];
 	gclient_t *client = &level.clients[clientNum];
 
-	client->ps.stats[STAT_WEAPONS] = ( 1 << WP_PHASER );
-	client->ps.ammo[WP_PHASER] = PHASER_AMMO_MAX;
+	//lob client->ps.stats[STAT_WEAPONS] = ( 1 << WP_PHASER );
+	//lob client->ps.ammo[WP_PHASER] = PHASER_AMMO_MAX;
+	client->ps.stats[STAT_WEAPONS] = ( 1 << WP_TRON_DISC );//lob spawn with disc
+	 client->ps.ammo[WP_TRON_DISC] = 10;//lob 
 
 	// health will count down towards max_health
 	ent->health = client->ps.stats[STAT_HEALTH] = client->ps.stats[STAT_MAX_HEALTH] * 1.25;
@@ -1267,7 +1269,10 @@ void ClientSpawn( gentity_t *ent, clientSpawnType_t spawnType ) {
 		ent->health = client->ps.stats[STAT_HEALTH] = client->ps.stats[STAT_MAX_HEALTH];
 
 		// Don't trip the out of ammo sound in CG_CheckAmmo
-		client->ps.stats[STAT_WEAPONS] = 1 << WP_PHASER;
+		
+		//lob client->ps.stats[STAT_WEAPONS] = 1 << WP_PHASER;
+client->ps.stats[STAT_WEAPONS] = 1 << WP_TRON_DISC;//lob spawn with disc IN SPEC
+
 	} else {
 		// Perform class-specific configuration
 		modfn.SpawnConfigureClient( clientNum );

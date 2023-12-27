@@ -218,6 +218,7 @@ wpnBarrelInfo_t wpnBarrelData[] =
 	{WP_VOYAGER_HYPO,		0},
 	{WP_BORG_ASSIMILATOR,	0},
 	{WP_BORG_WEAPON,		0},
+	{WP_TRON_DISC,		0},//lob
 
 	// make sure this is the last entry in this array, please
 	{WP_NONE,				0},
@@ -313,6 +314,31 @@ void CG_RegisterWeapon( int weaponNum ) {
 	}
 
 	switch ( weaponNum ) {
+
+			case WP_TRON_DISC: //lob
+		weaponInfo->missileModel = trap_R_RegisterModel( "models/weapons2/launcher/projectile.md3" );
+		weaponInfo->alt_missileModel = trap_R_RegisterModel( "models/weapons2/launcher/projectile2.md3" );
+
+		weaponInfo->missileTrailFunc = FX_GrenadeThink;
+
+		MAKERGB( weaponInfo->flashDlightColor, 0.6, 0.6, 1 );
+		weaponInfo->flashSound = trap_S_RegisterSound( SOUND_DIR "glauncher/fire.wav" );
+		weaponInfo->altFlashSnd = trap_S_RegisterSound( SOUND_DIR "glauncher/alt_fire.wav" );
+		weaponInfo->altHitSound = trap_S_RegisterSound( SOUND_DIR "glauncher/beep.wav" );
+		cgs.media.grenadeAltStickSound = trap_S_RegisterSound(SOUND_DIR "glauncher/alt_stick.wav");
+		cgs.media.grenadeBounceSound1 = trap_S_RegisterSound(SOUND_DIR "glauncher/bounce1.wav");
+		cgs.media.grenadeBounceSound2 = trap_S_RegisterSound(SOUND_DIR "glauncher/bounce2.wav");
+		cgs.media.grenadeExplodeSound = trap_S_RegisterSound(SOUND_DIR "glauncher/explode.wav");
+
+		cgs.media.orangeTrailShader			= trap_R_RegisterShader( "gfx/misc/orangetrail" );
+		cgs.media.compressionMarkShader		= trap_R_RegisterShader( "gfx/damage/burnmark1" );
+		if ( cgs.pModSpecialties || cg_buildScript.integer )
+		{//tripwire shader
+			cgs.media.whiteLaserShader		= trap_R_RegisterShader( "gfx/effects/whitelaser" );
+			cgs.media.borgEyeFlareShader	= trap_R_RegisterShader( "gfx/misc/borgeyeflare" );
+		}
+		break;
+
 	case WP_PHASER:
 		MAKERGB( weaponInfo->flashDlightColor, 0, 0, 0 );
 

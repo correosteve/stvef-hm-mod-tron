@@ -909,7 +909,8 @@ client caching purposes.
 */
 void ModFNDefault_AddRegisteredItems( void ) {
 	// players always start with the base weapon
-	RegisterItem( BG_FindItemForWeapon( WP_PHASER ) );
+	//lob RegisterItem( BG_FindItemForWeapon( WP_PHASER ) );
+	RegisterItem( BG_FindItemForWeapon( WP_TRON_DISC ) );//lob
 	RegisterItem( BG_FindItemForWeapon( WP_COMPRESSION_RIFLE ) );	//this is for the podium at the end, make sure we have the model
 }
 
