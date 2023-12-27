@@ -224,9 +224,9 @@ gitem_t	bg_itemlist[] =
 	{//lob
 		"weapon_disc",
 		"sound/weapons/w_pkup.wav",
-		"models/weapons2/phaser/phaser_w.md3",	//world
-		"models/weapons2/phaser/phaser.md3",	//view
-/* icon */		"icons/w_icon_dreadnought",
+		"models/weapons2/disc/disc_w.md3",	//world
+		"models/weapons2/disc/disc.md3",	//view
+/* icon */		"icons/w_icon_disc",
 /* pickup */	"Disc",
 		AMMO_PHASER_CLIP,
 		IT_WEAPON,
