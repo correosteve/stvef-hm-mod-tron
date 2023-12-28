@@ -1630,6 +1630,32 @@ static void PM_Weapon( void ) {
 		}
 	}
 
+
+
+
+//lob
+//check if fired disc so hide weapon from hand
+
+		if ( pm->ps->rechargeTime <= 0 && pm->ps->ammo[WP_TRON_DISC] < PHASER_AMMO_MAX )
+		{//phaser recharges
+			pm->ps->rechargeTime = PHASER_RECHARGE_TIME;
+			pm->ps->ammo[WP_TRON_DISC]++;
+			//FIXME: recharge all ammo in specialty mode?
+			//do it slower for more powerful weapons
+			// pm->ps->weapon=WP_NONE;//
+
+
+	// kef -- load in-view model
+	// weaponInfo->viewModel = trap_R_RegisterModel(item->view_model);
+		}
+		else
+		{
+			pm->ps->rechargeTime -= pml.msec;
+		}
+
+
+//lob
+
 	// check for dead player
 	if ( pm->ps->stats[STAT_HEALTH] <= 0 ) {
 		pm->ps->weapon = WP_NONE;
@@ -1836,7 +1862,7 @@ static void PM_Weapon( void ) {
 		switch( pm->ps->weapon ) {
 		default:
 		case WP_TRON_DISC://lob
-			addTime = 40;//(inverse) fire rate
+			addTime = 700;//(inverse) fire rate
 			break;
 		case WP_PHASER:
 			addTime = 100;

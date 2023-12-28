@@ -315,28 +315,24 @@ void CG_RegisterWeapon( int weaponNum ) {
 
 	switch ( weaponNum ) {
 
-			case WP_TRON_DISC: //lob
-		weaponInfo->missileModel = trap_R_RegisterModel( "models/weapons2/launcher/projectile.md3" );
-		weaponInfo->alt_missileModel = trap_R_RegisterModel( "models/weapons2/launcher/projectile2.md3" );
+	case WP_TRON_DISC: //lob
+		weaponInfo->missileModel = trap_R_RegisterModel( "models/weapons2/disc/disc.md3" );
+		weaponInfo->alt_missileModel = trap_R_RegisterModel("models/weapons2/disc/disc.md3" );
 
-		weaponInfo->missileTrailFunc = FX_GrenadeThink;
+		// weaponInfo->missileTrailFunc = FX_GrenadeThink;
 
 		MAKERGB( weaponInfo->flashDlightColor, 0.6, 0.6, 1 );
-		weaponInfo->flashSound = trap_S_RegisterSound( SOUND_DIR "glauncher/fire.wav" );
-		weaponInfo->altFlashSnd = trap_S_RegisterSound( SOUND_DIR "glauncher/alt_fire.wav" );
-		weaponInfo->altHitSound = trap_S_RegisterSound( SOUND_DIR "glauncher/beep.wav" );
-		cgs.media.grenadeAltStickSound = trap_S_RegisterSound(SOUND_DIR "glauncher/alt_stick.wav");
-		cgs.media.grenadeBounceSound1 = trap_S_RegisterSound(SOUND_DIR "glauncher/bounce1.wav");
-		cgs.media.grenadeBounceSound2 = trap_S_RegisterSound(SOUND_DIR "glauncher/bounce2.wav");
-		cgs.media.grenadeExplodeSound = trap_S_RegisterSound(SOUND_DIR "glauncher/explode.wav");
+		weaponInfo->flashSound = trap_S_RegisterSound( SOUND_DIR "disc/fire1.wav" );
+		weaponInfo->altFlashSnd = trap_S_RegisterSound( SOUND_DIR "disc/fire1.wav" );
+		weaponInfo->altHitSound = trap_S_RegisterSound( SOUND_DIR "disc/DISCIMPACT_1.wav" );
+		cgs.media.grenadeAltStickSound = trap_S_RegisterSound(SOUND_DIR "disc/DISCIMPACT_1A.wav");
+		cgs.media.grenadeBounceSound1 = trap_S_RegisterSound(SOUND_DIR "disc/DISCIMPACT_1B.wav");
+		cgs.media.grenadeBounceSound2 = trap_S_RegisterSound(SOUND_DIR "disc/DISCIMPACT_1C.wav");
+		cgs.media.grenadeExplodeSound = trap_S_RegisterSound(SOUND_DIR "disc/DISCIMPACT_2.WAV");
 
 		cgs.media.orangeTrailShader			= trap_R_RegisterShader( "gfx/misc/orangetrail" );
 		cgs.media.compressionMarkShader		= trap_R_RegisterShader( "gfx/damage/burnmark1" );
-		if ( cgs.pModSpecialties || cg_buildScript.integer )
-		{//tripwire shader
-			cgs.media.whiteLaserShader		= trap_R_RegisterShader( "gfx/effects/whitelaser" );
-			cgs.media.borgEyeFlareShader	= trap_R_RegisterShader( "gfx/misc/borgeyeflare" );
-		}
+
 		break;
 
 	case WP_PHASER:
@@ -1809,6 +1805,15 @@ void CG_BounceEffect( centity_t *cent, int weapon, vec3_t origin, vec3_t normal 
 {
 	switch( weapon )
 	{
+	 case WP_TRON_DISC://lob
+		if ( rand() & 1 ) {
+			trap_S_StartSound( origin, ENTITYNUM_WORLD, CHAN_AUTO, trap_S_RegisterSound(SOUND_DIR "disc/DISCIMPACT_1A.WAV") );
+		} else {
+			trap_S_StartSound( origin, ENTITYNUM_WORLD, CHAN_AUTO, trap_S_RegisterSound(SOUND_DIR "disc/DISCIMPACT_1B.WAV") );
+		}
+		break;
+
+
 	case WP_GRENADE_LAUNCHER:
 		if ( rand() & 1 ) {
 			trap_S_StartSound( origin, ENTITYNUM_WORLD, CHAN_AUTO, trap_S_RegisterSound(SOUND_DIR "glauncher/bounce1.wav") );

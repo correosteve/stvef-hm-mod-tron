@@ -566,13 +566,29 @@ void CG_Missile( centity_t *cent, qboolean altfire ) {
 	refEntity_t			ent;
 	entityState_t		*s1;
 	qhandle_t			missile = 0;
-	const weaponInfo_t		*weapon;
+	 weaponInfo_t		*weapon;//lob was const
 
 	s1 = &cent->currentState;
 	if ( s1->weapon > WP_NUM_WEAPONS ) {
 		s1->weapon = 0;
 	}
 	weapon = &cg_weapons[s1->weapon];
+
+
+//lob
+if ( s1->weapon ==WP_TRON_DISC)
+{
+			weapon->weaponModel = trap_R_RegisterModel( "models/weapons2/noweap/noweap.md3" );
+			weapon->viewModel = trap_R_RegisterModel( "models/weapons2/noweap/noweap.md3" );
+
+}
+
+//lob
+
+
+
+
+
 
 	// calculate the axis
 	VectorCopy( s1->angles, cent->lerpAngles);
@@ -656,13 +672,13 @@ void CG_Missile( centity_t *cent, qboolean altfire ) {
 	
 	
 	
-	if ( cent->currentState.weapon == WP_TRON_DISC) {//lob
-		ent.reType = RT_SPRITE;
-		ent.data.sprite.radius = 16;
-		ent.data.sprite.rotation = 0;
-		trap_R_AddRefEntityToScene( &ent );
-		return;
-	}
+	// if ( cent->currentState.weapon == WP_TRON_DISC) {//lob
+	// 	ent.reType = RT_SPRITE;
+	// 	ent.data.sprite.radius = 16;
+	// 	ent.data.sprite.rotation = 0;
+	// 	trap_R_AddRefEntityToScene( &ent );
+	// 	return;
+	// }
 
 
 

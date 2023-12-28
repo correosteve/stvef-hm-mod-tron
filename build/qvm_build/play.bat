@@ -11,4 +11,4 @@ cd output
 xcopy *.pk3 %game_directory%\tron /Y
 
 
-start "" /D %game_directory% %game_exe% +set fs_game tron  +set bot_minplayers 0 +devmap ctf_voy1
+start "" /D %game_directory% %game_exe% +set developer 1 +set cg_debugevents 1 +set fs_game tron  +set bot_minplayers 0 +devmap quatron

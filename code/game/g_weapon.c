@@ -1023,111 +1023,32 @@ void WP_FireTronDisc( gentity_t *ent, qboolean alt_fire )
 //---------------------------------------------------------
 {
 	gentity_t	*grenade;
-	gentity_t	*tripwire = NULL;
+
 	vec3_t		dir, start;
-	int			tripcount = 0;
-	int			foundTripWires[MAX_GENTITIES] = {ENTITYNUM_NONE};
-	int			tripcount_org;
-	int			lowestTimeStamp;
-	int			removeMe;
+
+
 	int			i;
 
 	VectorCopy( forward, dir );
 	VectorCopy( muzzle, start );
 
 	grenade = G_Spawn();
+//	weaponInfo->weaponModel = trap_R_RegisterModel( NULL );
+// grenade->s.weapon->weaponModel= trap_R_RegisterModel( NULL );
+	// kef -- load in-view model
+//	weaponInfo->viewModel = trap_R_RegisterModel(NULL);
+
+PM_FinishWeaponChange();//drop disc (makes throw action)
 
 	// kef -- make sure count is 0 so it won't get its bounciness removed like the tetrion projectile
 	grenade->count = 0;
 
-	if ( alt_fire )
-	{
-		if ( ent->client && modfn.AdjustWeaponConstant( WC_USE_TRIPMINES, 0 ) )
-		{
-			//limit to 10 placed at any one time
-			//see how many there are now
-			while ( (tripwire = G_Find( tripwire, FOFS(classname), "tripwire" )) != NULL )
-			{
-				if ( tripwire->parent != ent )
-				{
-					continue;
-				}
-				foundTripWires[tripcount++] = tripwire->s.number;
-			}
-			//now remove first ones we find until there are only 9 left
-			tripwire = NULL;
-			tripcount_org = tripcount;
-			lowestTimeStamp = level.time;
-			while ( tripcount > 9 )
-			{
-				removeMe = -1;
-				for ( i = 0; i < tripcount_org; i++ )
-				{
-					if ( foundTripWires[i] == ENTITYNUM_NONE )
-					{
-						continue;
-					}
-					tripwire = &g_entities[foundTripWires[i]];
-					if ( tripwire && tripwire->timestamp < lowestTimeStamp )
-					{
-						removeMe = i;
-						lowestTimeStamp = tripwire->timestamp;
-					}
-				}
-				if ( removeMe != -1 )
-				{
-					//remove it... or blow it?
-					if ( &g_entities[foundTripWires[removeMe]] == NULL )
-					{
-						break;
-					}
-					else
-					{
-						G_FreeEntity( &g_entities[foundTripWires[removeMe]] );
-					}
-					foundTripWires[removeMe] = ENTITYNUM_NONE;
-					tripcount--;
-				}
-				else
-				{
-					break;
-				}
-			}
-			//now make the new one
-			grenade->classname = "tripwire";
-			grenade->splashDamage = GRENADE_SPLASH_DAM*s_quadFactor;
-			grenade->splashRadius = GRENADE_SPLASH_RAD;
-			grenade->s.pos.trType = TR_LINEAR;
-			grenade->nextthink = level.time + 1000; // How long 'til she blows
-			grenade->count = 1;//tell it it's a tripwire for when it sticks
-			grenade->timestamp = level.time;//remember when we placed it
-			grenade->s.otherEntityNum2 = ent->client->sess.sessionTeam;
-		}
-		else
-		{
-			grenade->classname = "grenade_alt_projectile";
-			grenade->splashDamage = GRENADE_SPLASH_DAM*s_quadFactor;
-			grenade->splashRadius = GRENADE_SPLASH_RAD;//*s_quadFactor;
-			grenade->s.pos.trType = TR_GRAVITY;
-			grenade->nextthink = level.time + GRENADE_ALT_TIME; // How long 'til she blows
-		}
-		grenade->think = grenadeSpewShrapnel;
-		grenade->s.eFlags |= EF_MISSILE_STICK;
-		VectorScale( dir, 1000/*GRENADE_ALT_VELOCITY*/, grenade->s.pos.trDelta );
-
-		grenade->damage = GRENADE_ALT_DAMAGE*DMG_VAR*s_quadFactor;
-		grenade->methodOfDeath = MOD_GRENADE_ALT;
-		grenade->splashMethodOfDeath = MOD_GRENADE_ALT_SPLASH;
-		grenade->s.eType = ET_ALT_MISSILE;
-	}
-	else
-	{
-		grenade->classname = "grenade_projectile";
-		grenade->nextthink = level.time + GRENADE_TIME; // How long 'til she blows
+		grenade->classname = "disc_projectile";
+		grenade->nextthink = level.time + GRENADE_TIME*100; // How long 'til she blows
 		grenade->think = grenadeExplode;
-		grenade->s.eFlags |= EF_BOUNCE_HALF;
-		VectorScale( dir, GRENADE_VELOCITY, grenade->s.pos.trDelta );
-		grenade->s.pos.trType = TR_GRAVITY;
+		grenade->s.eFlags |= EF_BOUNCE;
+		VectorScale( dir, GRENADE_VELOCITY/1.5, grenade->s.pos.trDelta );
+		grenade->s.pos.trType = TR_LINEAR;
 
 		grenade->damage = GRENADE_DAMAGE*DMG_VAR*s_quadFactor;
 		grenade->splashDamage = GRENADE_SPLASH_DAM*s_quadFactor;
@@ -1135,10 +1056,10 @@ void WP_FireTronDisc( gentity_t *ent, qboolean alt_fire )
 		grenade->methodOfDeath = MOD_GRENADE;
 		grenade->splashMethodOfDeath = MOD_GRENADE_SPLASH;
 		grenade->s.eType = ET_MISSILE;
-	}
+	
 
 	grenade->r.svFlags = SVF_USE_CURRENT_ORIGIN;
-	grenade->s.weapon = WP_GRENADE_LAUNCHER;
+	grenade->s.weapon = WP_TRON_DISC;
 	grenade->r.ownerNum = ent->s.number;
 	grenade->parent = ent;
 

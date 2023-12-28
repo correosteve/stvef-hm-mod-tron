@@ -322,7 +322,7 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 	trap_Cvar_Set( "gamedate", __DATE__ );
 
 
-G_Printf ("^2---------------------Tron Mod ---------------------/n");//lob
+G_Printf ("^2---------------------Tron Mod ---------------------\n");//lob
 
 
 	init_tonextint(qtrue);
